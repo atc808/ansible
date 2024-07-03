@@ -1,0 +1,14 @@
+---
+- name: Gather facts from Ubuntu Desktop
+  hosts: 10.10.10.184
+  become: yes  # Run tasks with sudo
+
+  tasks:
+    - name: Gather facts
+      ansible.builtin.setup:
+        gather_subset:
+          - all
+
+    - name: Display gathered facts
+      ansible.builtin.debug:
+        var: ansible_facts
