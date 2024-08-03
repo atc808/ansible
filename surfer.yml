@@ -1,6 +1,6 @@
 ---
 - name: Gather facts from Ubuntu Desktop
-  hosts: 10.10.10.174
+  hosts: localhost
   become: yes  # Run tasks with sudo
 
   tasks:
