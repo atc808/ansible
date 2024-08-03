@@ -3,7 +3,8 @@
   hosts: all
   become: no  # Run tasks with sudo
   become_method: su
-  become_user: igumas
+  become_user: root
+  become_pass: 'Citl0ml!'
 
   tasks:
     - name: Gather facts
