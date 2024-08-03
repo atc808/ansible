@@ -3,9 +3,7 @@
   hosts: all
   become: no  # Run tasks with sudo
   become_method: sudo
-  become_user: igumas
-  ansible_user: igumas
-  
+  become_user: igumas  
 
   tasks:
     - name: Gather facts
