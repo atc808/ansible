@@ -3,7 +3,7 @@
   hosts: all
   become: yes  # Run tasks with sudo
   become_user: root
-  become_password: 'Citl0ml'
+  ansible_become_password: 'Citl0ml'
 
   tasks:
     - name: Gather facts
