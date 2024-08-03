@@ -2,8 +2,8 @@
 - name: Gather facts from Ubuntu Desktop
   hosts: all
   become: no  # Run tasks with sudo
-  become_method: su
-  become_user: root
+  become_method: sudo
+  become_user: igumas
   become_pass: 'Citl0ml!'
 
   tasks:
