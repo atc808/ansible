@@ -4,6 +4,7 @@
   become: no  # Run tasks with sudo
   become_method: sudo
   become_user: igumas
+  ansible_user: igumas
   
 
   tasks:
