@@ -2,8 +2,8 @@
 - name: Gather facts from Ubuntu Desktop
   hosts: all
   become: yes  # Run tasks with sudo
-  become_user: root
-  ansible_become_password: 'Citl0ml'
+  become_method: su
+  become_user: igumas
 
   tasks:
     - name: Gather facts
