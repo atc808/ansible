@@ -1,7 +1,7 @@
 ---
 - name: Gather facts from Ubuntu Desktop
   hosts: all
-  become: yes  # Run tasks with sudo
+  become: no  # Run tasks with sudo
   become_method: su
   become_user: igumas
 
