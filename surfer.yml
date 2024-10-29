@@ -1,6 +1,6 @@
 ---
 - name: Gather facts from Ubuntu Desktop
-  hosts: all
+  hosts: silversurfer
   remote_user: igumas
   become: no  # Run tasks with sudo
   become_method: sudo
