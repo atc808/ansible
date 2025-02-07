@@ -3,9 +3,9 @@
   hosts: localhost
   gather_facts: no
   vars:
-    esxi_host: "your-esxi-host"
-    esxi_user: "your-username"
-    esxi_password: "your-password"
+    esxi_host: "10.10.10.2"
+    esxi_user: "root"
+    esxi_password: "Citl0ml!"
   tasks:
     - name: Get VM facts from ESXi
       community.vmware.vmware_vm_info:
