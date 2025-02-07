@@ -1,22 +1,24 @@
 ---
-- name: Gather facts from Ubuntu Desktop
-<<<<<<< HEAD
-  hosts: 10.10.10.174
-  become: yes  # Run tasks with sudo
-=======
-  hosts: all
-  remote_user: igumas
-  become: no  # Run tasks with sudo
-  become_method: sudo
-  become_user: igumas  
->>>>>>> 5085cd6c1eab13dd18ee1b4854951e4909e139de
-
+- name: Gather VM network details from ESXi host
+  hosts: localhost
+  gather_facts: no
+  vars:
+    esxi_host: "your-esxi-host"
+    esxi_user: "your-username"
+    esxi_password: "your-password"
   tasks:
-    - name: Gather facts
-      ansible.builtin.setup:
-        gather_subset:
-          - all
+    - name: Get VM facts from ESXi
+      community.vmware.vmware_vm_info:
+        hostname: "{{ esxi_host }}"
+        username: "{{ esxi_user }}"
+        password: "{{ esxi_password }}"
+        validate_certs: no
+      register: vm_info
 
-    - name: Display gathered facts 
-      ansible.builtin.debug:
-        var: ansible_facts
+    - name: Create array of dictionaries with VM names and network names
+      set_fact:
+        vm_networks: "{{ vm_info.virtual_machines | map('extract', 'name') | zip(vm_info.virtual_machines | map(attribute='networks.0.network')) | list | map('list', ['vm_name', 'net_name']) | list }}"
+
+    - name: Show the VM networks array
+      debug:
+        var: vm_networks
