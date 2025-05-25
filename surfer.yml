@@ -11,11 +11,6 @@
     ansible.builtin.setup:
       gather_subset:
         - all
-        - network
-        - hardware
-        - virtual
-        - system
-        - packages
   - name: Display gathered facts 
     ansible.builtin.debug:
       var: ansible_facts
