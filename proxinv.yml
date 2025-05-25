@@ -11,7 +11,7 @@
     node: "prox.3pierces.com"  # Replace with your Proxmox node name
 
   tasks:
-    - name: Retrieve virtual machines info
+    - name: Retrieve virtual machines info    
       community.general.proxmox_vm_info:
         api_host: "{{ api_host }}"
         api_token_id: "{{ api_token_id }}"
