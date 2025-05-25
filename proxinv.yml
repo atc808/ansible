@@ -1,14 +1,7 @@
 ---
-#  hosts: all
-#  remote_user: igumas
-become: no  # Run tasks with sudo
-#  become_method: sudo
-#  become_user: igumas
-tasks:
-  - name: List all existing virtual machines on node
-    community.general.proxmox_vm_info:
-      api_host: '{{ node }}'
-      api_user: root@pam
-      api_token_id: '{{ api_token_id | default(omit) }}'
-      api_token_secret: '{{ api_token_secret | default(omit) }}'
-      node: '{{ node }}'
+- name: List all existing virtual machines on node  
+  ansible.community.general.proxmox_vm_info:
+  api_host: '{{ node }}'
+  api_token_id: '{{ api_token_id | default(omit) }}'
+  api_token_secret: '{{ api_token_secret | default(omit) }}'
+  node: '{{ node }}'
