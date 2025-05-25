@@ -1,18 +1,23 @@
 ---
-- name: List all existing virtual machines on node
-
+- name: List all existing virtual machines on a Proxmox node
   hosts: localhost
+  gather_facts: false
+
+#  vars:
+#    api_host: "your_proxmox_host"  # Replace with your Proxmox host
+#    api_token_id: "your_token_id"  # Replace with your API token ID
+#    api_token_secret: "your_token_secret"  # Replace with your API token secret
+#    node: "your_node_name"  # Replace with your Proxmox node name
 
   tasks:
-
     - name: Retrieve virtual machines info
-
       community.general.proxmox_vm_info:
+        api_host: "{{ api_host }}"
+        api_token_id: "{{ api_token_id }}"
+        api_token_secret: "{{ api_token_secret }}"
+        node: "{{ node }}"
+      register: vm_info
 
-        api_host: '{{ node }}'
-
-        api_token_id: '{{ api_token_id | default(omit) }}'
-
-        api_token_secret: '{{ api_token_secret | default(omit) }}'
-
-        node: '{{ node }}'
+    - name: Display virtual machines info
+      debug:
+        var: vm_info
