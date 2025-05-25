@@ -4,11 +4,11 @@
   gather_facts: false
 
   vars:
-    api_host: "proxmox"  # Replace with your Proxmox host
+    api_host: "prox.3pierces.com"  # Replace with your Proxmox host
     api_user: "root@pam"
     api_token_id: "sam"  # Replace with your API token ID
     api_token_secret: "7a3ced0f-1ed9-49a2-8cca-e7485bae6dfb"  # Replace with your API token secret
-    node: "proxmox.3pierces.com"  # Replace with your Proxmox node name
+    node: "prox.3pierces.com"  # Replace with your Proxmox node name
 
   tasks:
     - name: Retrieve virtual machines info
@@ -17,7 +17,7 @@
         api_token_id: "{{ api_token_id }}"
         api_token_secret: "{{ api_token_secret }}"
         api_user: "{{ api_user }}"
-        node: "{{ node }}"
+       # node: "{{ node }}"
       register: vm_info
       
 
