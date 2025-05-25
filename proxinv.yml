@@ -19,7 +19,7 @@
         api_user: "{{ api_user }}"
        # node: "{{ node }}"
       register: vm_info
-      
+      #
 
     - name: Display virtual machines info
       debug:
