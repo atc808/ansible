@@ -1,9 +1,9 @@
 ---
-  hosts: all
-  remote_user: igumas
-  become: no  # Run tasks with sudo
-  become_method: sudo
-  become_user: igumas
+#  hosts: all
+#  remote_user: igumas
+#  become: no  # Run tasks with sudo
+#  become_method: sudo
+#  become_user: igumas
   tasks:
   - name: List all existing virtual machines on node
     community.general.proxmox_vm_info:
