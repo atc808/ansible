@@ -1,6 +1,6 @@
 ---
 - name: List all existing virtual machines on node  
-  ansible.community.general.proxmox_vm_info:
+  community.general.proxmox_vm_info:
   api_host: '{{ node }}'
   api_token_id: '{{ api_token_id | default(omit) }}'
   api_token_secret: '{{ api_token_secret | default(omit) }}'
