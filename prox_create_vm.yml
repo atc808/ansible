@@ -25,10 +25,10 @@
         node: "{{ node }}"
         vmid: "{{ vm_id }}"
         name: "{{ vm_name }}"
-        memory: 2048                      # Memory in MB
-        cores: 2                          # Number of CPU cores
-        sockets: 1                        # Number of CPU sockets
-        disk: "32G"                       # Disk size
+        memory: "{{ memory }}"                      # Memory in MB
+        cores: "{{ cores }}"                        # Number of CPU cores
+        sockets: "{{ sockets }}"                        # Number of CPU sockets
+        disk: "{{ disk_size }}G"                       # Disk size
         storage: "{{ storage }}"          # Storage location
         net: '{"net0":"virtio,bridge=vmbr0"}'  # Network configuration
         ostype: l26                       # OS type (Linux 2.6+ kernel)
