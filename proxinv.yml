@@ -18,9 +18,9 @@
         api_token_secret: "{{ api_token_secret }}"
         api_user: "{{ api_user }}"
        # node: "{{ node }}"
-      register: vm_info.proxmox_vms.name
+      register: vm_info
       #
 
     - name: Display virtual machines info
       debug:
-        var: vm_info
+        var: vm_info.name
