@@ -1,0 +1,50 @@
+---
+- name: Create a Proxmox Virtual Machine
+  hosts: localhost
+  gather_facts: false
+  vars:
+    proxmox_api_host: "prox.3pierces.com"  # Replace with your Proxmox host
+    proxmox_api_user: "root@pam"
+    api_token_id: "sam"  # Replace with your API token ID
+    api_token_secret: "7a3ced0f-1ed9-49a2-8cca-e7485bae6dfb"  # Replace with your API token secret
+    node: "prox.3pierces.com"  # Replace with your Proxmox node name
+
+    vm_name: "{{ vm_name }}"
+    vm_id: "{{ vm_id }}"
+    storage: "pinas"                    # Storage name in Proxmox
+    iso: "local:iso/rhel-9.5-x86_64-dvd.iso"  # Path to ISO in Proxmox storage
+  tasks:
+    - name: Create a new VM in Proxmox
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ api_token_id }}"
+        api_token_secret: "{{ api_token_secret }}"
+
+        #api_password: "{{ proxmox_api_password }}"
+        node: "{{ node }}"
+        vmid: "{{ vm_id }}"
+        name: "{{ vm_name }}"
+        memory: 2048                      # Memory in MB
+        cores: 2                          # Number of CPU cores
+        sockets: 1                        # Number of CPU sockets
+        disk: "32G"                       # Disk size
+        storage: "{{ storage }}"          # Storage location
+        net: '{"net0":"virtio,bridge=vmbr0"}'  # Network configuration
+        ostype: l26                       # OS type (Linux 2.6+ kernel)
+        ide2: "{{ iso }},media=cdrom"     # Mount ISO for installation
+        boot: "cd"                        # Boot from CD (ISO)
+        state: present
+      register: vm_creation
+
+    - name: Start the VM
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ api_token_id }}"
+        api_token_secret: "{{api_token_secret }}"
+       # api_password: "{{ proxmox_api_password }}"
+        node: "{{ node }}"
+        vmid: "{{ vm_id }}"
+        state: started
+      when: vm_creation.changed
