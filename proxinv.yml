@@ -23,4 +23,4 @@
 
     - name: Display virtual machines info
       debug:
-        var: vm_info
+        var: vm_info.proxmox_vms.name
