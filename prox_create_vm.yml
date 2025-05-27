@@ -32,7 +32,7 @@
         storage: "{{ storage }}"          # Storage location
         net: '{"net0":"virtio,bridge=vmbr0"}'  # Network configuration
         ostype: l26                       # OS type (Linux 2.6+ kernel)
-        ide2: "{{ iso }},media=cdrom"     # Mount ISO for installation
+        ide: "{{ iso }},media=cdrom"     # Mount ISO for installation
         boot: "cd"                        # Boot from CD (ISO)
         state: present
       register: vm_creation
