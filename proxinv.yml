@@ -18,7 +18,7 @@
         api_token_secret: "{{ api_token_secret }}"
         api_user: "{{ api_user }}"
        # node: "{{ node }}"
-      register: vm_info.name
+      register: vm_info
       #
 
     - name: Display virtual machines info
