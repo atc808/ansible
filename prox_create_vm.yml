@@ -27,6 +27,8 @@
         api_user: "{{ proxmox_api_user }}"
         api_token_id: "{{ api_token_id }}"
         api_token_secret: "{{ api_token_secret }}"
+        iso_storage: "local"  # Storage where the ISO is located
+        iso_file: "rhel-9.5-x86_64-dvd.iso"
 
         #api_password: "{{ proxmox_api_password }}"
         node: "{{ node }}"
@@ -39,7 +41,9 @@
      #   storage: "{{ storage }}"          # Storage location
         net: '{"net0":"virtio,bridge=vmbr0"}'  # Network configuration
         ostype: l26                       # OS type (Linux 2.6+ kernel)
-        ide: "{{ iso }},media=cdrom"     # Mount ISO for installation
+ #       ide: "{{ iso }},media=cdrom"     # Mount ISO for installation
+        ide:
+          ide2: "{{ iso_storage }}:iso/{{ iso_file }},media=cdrom"
         scsi:
           scsi0: "{{ disk_storage }}:{{ disk_size }},format=qcow2"
         boot: "cd"                        # Boot from CD (ISO)
