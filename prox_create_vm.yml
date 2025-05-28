@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    api_host: "{{ proxmox_api_host }}"
+    api_host: "prox.3pierces.com" #{{ proxmox_api_host }}"
     api_user: "{{ proxmox_api_user }}"
     api_token_id: "{{ api_token_id }}"
     api_token_secret: "{{ api_token_secret }}"
