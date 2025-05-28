@@ -82,6 +82,6 @@
        # api_password: "{{ proxmox_api_password }}"
         node: "{{ node }}"
  #       name: "{{ vm_name }}"
-        vmid: "{{ vm_info.vm_id }}"
+        vmid: "{{ vm_info.vmid }}"
         state: started
       when: vm_creation.changed
