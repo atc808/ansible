@@ -3,11 +3,12 @@
   hosts: localhost
   gather_facts: false
   vars:
-    api_host: "prox.3pierces.com" #{{ proxmox_api_host }}"
-    api_user: "{{ proxmox_api_user }}"
-    api_token_id: "{{ api_token_id }}"
-    api_token_secret: "{{ api_token_secret }}"
+    api_host: "prox.3pierces.com"  # Replace with your Proxmox host
+    api_user: "root@pam"
+    api_token_id: "sam"  # Replace with your API token ID
+    api_token_secret: "7a3ced0f-1ed9-49a2-8cca-e7485bae6dfb"  # Replace with your API token secret
     node: "prox.3pierces.com"  # Replace with your Proxmox node name
+
     vm_name: "{{ vm_name }}"
 #    vm_id: "{{ vm_id }}"
 
@@ -34,8 +35,8 @@
         memory: "{{ memory }}"                      # Memory in MB
         cores: "{{ cores }}"                        # Number of CPU cores
         sockets: "{{ sockets }}"                        # Number of CPU sockets
-        disk: "{{ disk_size }}"                       # Disk size
-        storage: "{{ storage }}"          # Storage location
+     #   disk: "{{ disk_size }}"                       # Disk size
+     #   storage: "{{ storage }}"          # Storage location
         net: '{"net0":"virtio,bridge=vmbr0"}'  # Network configuration
         ostype: l26                       # OS type (Linux 2.6+ kernel)
         ide: "{{ iso }},media=cdrom"     # Mount ISO for installation
