@@ -48,6 +48,13 @@
         state: present
       register: vm_creation
 
+
+
+
+
+
+
+
     - name: Start the VM
       community.general.proxmox_kvm:
         api_host: "{{ proxmox_api_host }}"
@@ -56,6 +63,7 @@
         api_token_secret: "{{api_token_secret }}"
        # api_password: "{{ proxmox_api_password }}"
         node: "{{ node }}"
-        vmid: "{{ vm_id }}"
+        name: "{{ vm_name }}"
+ #      vmid: "{{ vm_id }}"
         state: started
       when: vm_creation.changed
