@@ -49,10 +49,28 @@
       register: vm_creation
 
 
+    - name: Get VM information
+      community.general.proxmox_kvm:       
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ api_token_id }}"
+        api_token_secret: "{{ api_token_secret }}"
 
+        node: "{{ proxmox_node }}"
+        name: "{{ vm_name }}"
+        state: present
+      register: vm_info
+      ignore_errors: true
 
+    - name: Display VMID
+      ansible.builtin.debug:
+        msg: "VMID for {{ vm_name }} is {{ vm_info.vmid | default('not found') }}"
+      when: vm_info.vmid is defined
 
-
+    - name: Fail if VM not found
+      ansible.builtin.fail:
+        msg: "No VM found with name {{ vm_name }} on node {{ proxmox_node }}"
+      when: vm_info.vmid is not defined
 
 
     - name: Start the VM
@@ -63,7 +81,7 @@
         api_token_secret: "{{api_token_secret }}"
        # api_password: "{{ proxmox_api_password }}"
         node: "{{ node }}"
-        name: "{{ vm_name }}"
- #      vmid: "{{ vm_id }}"
+ #       name: "{{ vm_name }}"
+        vmid: "{{ vm_info.vm_id }}"
         state: started
       when: vm_creation.changed
