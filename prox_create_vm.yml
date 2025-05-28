@@ -3,8 +3,8 @@
   hosts: localhost
   gather_facts: false
   vars:
-    api_host: "prox.3pierces.com"  # Replace with your Proxmox host
-    api_user: "root@pam"
+    proxmox_api_host: "prox.3pierces.com"  # Replace with your Proxmox host
+    proxmox_api_user: "root@pam"
     api_token_id: "sam"  # Replace with your API token ID
     api_token_secret: "7a3ced0f-1ed9-49a2-8cca-e7485bae6dfb"  # Replace with your API token secret
     node: "prox.3pierces.com"  # Replace with your Proxmox node name
