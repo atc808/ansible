@@ -10,16 +10,14 @@
     node: "prox"  # Replace with your Proxmox node name
     iso_storage: "local"  # Storage where the ISO is located
     iso_file: "rhel-9.5-x86_64-dvd.iso"
-
     vm_name: "{{ vm_name }}"
-#    vm_id: "{{ vm_id }}"
 
     iso: "local:iso/rhel-9.5-x86_64-dvd.iso"  # Path to ISO in Proxmox storage
     disk_storage: "pinas"  # Storage pool for the VM disk
-    disk_size: "80G"
-    memory: 4096  # 4GB RAM in MB
-    sockets: 2
-    cores: 2
+#    disk_size: "80G"
+##    memory: 4096  # 4GB RAM in MB
+##    sockets: 2
+#    cores: 2
 
 
   tasks:
