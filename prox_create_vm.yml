@@ -30,7 +30,7 @@
 
         #api_password: "{{ proxmox_api_password }}"
         node: "{{ node }}"
-        vmid: "{{ vm_id }}"
+   #     vmid: "{{ vm_id }}"
         name: "{{ vm_name }}"
         memory: "{{ memory }}"                      # Memory in MB
         cores: "{{ cores }}"                        # Number of CPU cores
