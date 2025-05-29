@@ -58,7 +58,7 @@
 
         node: "{{ node }}"
         name: "{{ vm_name }}"
-        state: present
+  #      state: present
       register: vm_info
       ignore_errors: true
 
