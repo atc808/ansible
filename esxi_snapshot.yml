@@ -1,0 +1,30 @@
+---
+- name: List VMs with snapshots on ESXi
+  hosts: localhost
+  gather_facts: no
+  #collections:
+  #  - community.vmware
+
+  vars:
+  #  esxi_host: "192.168.1.100"
+  #  esxi_user: "root"
+  #  esxi_pass: "your_password"
+    validate_certs: false
+
+  tasks:
+    - name: Get list of all VMs on ESXi host
+      vmware_vm_info:
+        hostname: "{{ esxi_host }}"
+        username: "{{ esxi_user }}"
+        password: "{{ esxi_pass }}"
+        validate_certs: "{{ validate_certs }}"
+      register: vm_info
+
+    - name: Filter VMs that have snapshots
+      set_fact:
+        vms_with_snapshots: "{{ vm_info.virtual_machines | selectattr('snapshots', 'defined') | selectattr('snapshots', '!=', []) | list }}"
+
+    - name: Show VMs with snapshots
+      debug:
+        msg: "VM {{ item.name }} has snapshots"
+      loop: "{{ vms_with_snapshots }}"
