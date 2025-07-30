@@ -14,7 +14,7 @@
   tasks:
     - name: Get list of all VMs on ESXi host
       vmware_vm_info:
-        hostname: esxi2 #"{{ lookup('env', 'VMWARE_HOST') }}"
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
         password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
         validate_certs: "{{ validate_certs }}"
