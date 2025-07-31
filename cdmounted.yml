@@ -11,7 +11,7 @@
     password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
     validate_certs: false
 
-   tasks:
+  tasks:
     - name: Retrieve all VMs from vCenter/ESXi
       community.vmware.vmware_vm_info:
         hostname: "{{ vcenter_hostname }}"
