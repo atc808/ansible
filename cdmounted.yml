@@ -7,8 +7,8 @@
 
   vars:
     esxi_hostname: "10.10.10.3"  # Replace with your ESXi IP or hostname
-    esxi_username: "{{ lookup('env', 'ESXI_USERNAME') }}"  # Or hardcode
-    esxi_password: "{{ lookup('env', 'ESXI_PASSWORD') }}"
+    esxi_username: "{{ lookup('env', 'VMWARE_USER') }}"  # Or hardcode
+    esxi_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
     validate_certs: false
 
   tasks:
