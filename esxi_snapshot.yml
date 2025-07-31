@@ -1,5 +1,5 @@
 ---
-- name: List VMs with snapshots on ESXi
+- name: List VMs with snapshots and details on ESXi
   hosts: localhost
   gather_facts: no
 
@@ -26,8 +26,14 @@
       loop: "{{ vms.virtual_machines }}"
       register: snapshot_results
 
-    - name: Show VMs with snapshots
+    - name: Show VMs with snapshot details
       debug:
-        msg: "VM {{ item.invocation.module_args.uuid }} has snapshots"
+        msg: |
+          VM with UUID {{ item.invocation.module_args.uuid }} has snapshots:
+          {% for snap in item.snapshot_info.snapshots %}
+            - Name: {{ snap.name }}
+              Description: {{ snap.description | default('N/A') }}
+              Created: {{ snap.create_time | default('Unknown') }}
+          {% endfor %}
       loop: "{{ snapshot_results.results }}"
       when: item.snapshot_info is defined and item.snapshot_info.snapshots | length > 0
