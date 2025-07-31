@@ -19,14 +19,3 @@
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
-    - name: Dismount CD/DVD media from identified VM
-      vmware_guest_cdrom:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: "{{ validate_certs }}"
-        name: "{{ item.name }}"
-        state: "absent"
-      loop: "{{ vm_info }}"
-      loop_control:
-        label: "{{ item.name }}"
