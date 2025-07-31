@@ -13,12 +13,13 @@
 
   tasks:
     - name: Get list of all VMs on ESXi host
-      vmware_vm_info:
+      vmware_all_snapshot_info:
         hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
         password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
         
         validate_certs: "{{ validate_certs }}"
+      delegate_to: localhost  
       register: vm_info
 
     - name: Filter VMs that have snapshots
