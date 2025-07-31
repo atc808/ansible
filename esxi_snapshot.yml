@@ -26,11 +26,12 @@
         hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
         password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
-      #  datacenter: "Virtual machine"
-        name: "unifi-orig"
+        datacenter: "Virtual machine"
+        uuid: "{{ item.uuid }}"
         validate_certs: "{{ validate_certs }}"
       delegate_to: localhost  
       register: vm_info
+      loop: "{{ vms.virtual_machines }}"
 
     # - name: Filter VMs that have snapshots
     #   set_fact:
