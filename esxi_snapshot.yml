@@ -20,7 +20,7 @@
         hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
         password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
-        
+        datacenter: "Virtual machine"
         uuid: "{{ item.uuid }}"
         validate_certs: "{{ validate_certs }}"
       loop: "{{ vms.virtual_machines }}"
