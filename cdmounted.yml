@@ -13,9 +13,9 @@
   tasks:
     - name: Retrieve all VMs from vCenter/ESXi
       vmware_vm_info:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
+        hostname: "{{ hostname }}"
+        username: "{{ username }}"
+        password: "{{ password }}"
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
