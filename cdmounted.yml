@@ -1,19 +1,19 @@
 ---
-- name: Find VMs with CD/DVD media mounted on standalone ESXi
+- name: Find VMs with mounted CD/DVD media on ESXi
   hosts: localhost
   gather_facts: no
   collections:
     - community.vmware
 
   vars:
-    esxi_hostname: "10.10.10.3"  # Replace with your ESXi IP or hostname
-    esxi_username: "{{ lookup('env', 'VMWARE_USER') }}"  # Or hardcode
+    esxi_hostname: "10.10.10.3"
+    esxi_username: "{{ lookup('env', 'VMWARE_USERNAME') }}"
     esxi_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
     validate_certs: false
 
   tasks:
 
-    - name: Get list of all virtual machines on ESXi
+    - name: Get list of VMs from ESXi
       vmware_vm_info:
         hostname: "{{ esxi_hostname }}"
         username: "{{ esxi_username }}"
@@ -21,24 +21,29 @@
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
-    - name: Filter VMs with CD/DVD devices that are connected and have backing file
+    - name: Initialize list of VMs with CD media
       set_fact:
-        vms_with_cdrom: >-
-          {{
-            vm_info.virtual_machines | selectattr('hardware.device', 'defined') | selectattr(
-              'hardware.device',
-              'select',
-              lambda devices: devices | selectattr('device_info.label', 'search', 'CD/DVD') | selectattr('connectable.connected', 'equalto', true) | list | length > 0
-            ) | list
-          }}
+        vms_with_cdrom: []
 
-    - name: Display VMs with CD/DVD mounted media
-      debug:
-        msg: >-
-          VM: {{ item.name }},
-          ISO: {{
-            item.hardware.device | selectattr('device_info.label', 'search', 'CD/DVD')
-            | selectattr('connectable.connected', 'equalto', true)
-            | map(attribute='backing.fileName') | list
+    - name: Check each VM for connected CD/DVD devices
+      vars:
+        cd_devices: >-
+          {{
+            item.hardware.device | selectattr('device_info.label', 'search', 'CD/DVD') | list
           }}
-      loop: "{{ vms_with_cdrom }}"
+        cd_connected: >-
+          {{
+            cd_devices | selectattr('connectable.connected', 'equalto', true) | list
+          }}
+        cd_backings: >-
+          {{
+            cd_connected | map(attribute='backing.fileName') | list
+          }}
+      set_fact:
+        vms_with_cdrom: "{{ vms_with_cdrom + [ { 'name': item.name, 'iso_files': cd_backings } ] }}"
+      when: cd_connected | length > 0
+      loop: "{{ vm_info.virtual_machines }}"
+
+    - name: Show VMs with CD/DVD mounted
+      debug:
+        var: vms_with_cdrom
