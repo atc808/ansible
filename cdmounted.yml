@@ -19,31 +19,7 @@
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
-    - name: Initialize list of VMs with mounted CD/DVD
-      set_fact:
-        vms_with_cd: []
 
-    - name: Identify VMs with a mounted CD/DVD drive
-      vars:
-        # The flag checks for at least one device in the VM's hardware.device list that has a 'device_info.label'
-        # containing "CD/DVD" and with 'connectable.connected' set to true.
-        cd_mounted: >-
-          {{
-            (item.hardware.device | selectattr("device_info.label", "search", "CD/DVD")
-                                   | selectattr("connectable.connected", "equalto", true)
-                                   | list | length) > 0
-          }}
-      set_fact:
-        vms_with_cd: "{{ vms_with_cd + [ item ] }}"
-      loop: "{{ vm_info.virtual_machines }}"
-      when: item.hardware.device is defined and cd_mounted
-
-    - name: Display VMs with mounted CD/DVD media
-      debug:
-        msg: "VM with mounted CD/DVD: {{ item.name }}"
-      loop: "{{ vms_with_cd }}"
-      loop_control:
-        label: "{{ item.name }}"
 
     - name: Dismount CD/DVD media from identified VMs
       vmware_guest_cd_drive:
@@ -53,6 +29,6 @@
         validate_certs: "{{ validate_certs }}"
         name: "{{ item.name }}"
         state: "absent"
-      loop: "{{ vms_with_cd }}"
+      loop: "{{ vm_info }}"
       loop_control:
         label: "{{ item.name }}"
