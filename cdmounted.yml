@@ -21,7 +21,7 @@
 
 
 
-    - name: Dismount CD/DVD media from identified VMs
+    - name: Dismount CD/DVD media from identified VM
       vmware_guest_cd_drive:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
