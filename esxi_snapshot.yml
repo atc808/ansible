@@ -7,7 +7,7 @@
     validate_certs: false
 
   tasks:
-    - name: Get detailed list of all VMs (including UUIDs)
+    - name: Get detailed list of all VMs (includin UUIDs)
       vmware_vm_info:
         hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
