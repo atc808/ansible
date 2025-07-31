@@ -48,7 +48,7 @@
 
     - name: Print VMs with connected CD/DVD devices
       debug:
-        msg: "VM '{{ item.guest_name | default(item.vm_name) }}' has connected CD/DVD device(s)."
+        msg: "VM '{{ item.guest_name | default(item.vm_name) }}' has cofnnected CD/DVD device(s)."
       loop: "{{ vms_with_connected_cd }}"
 
 
