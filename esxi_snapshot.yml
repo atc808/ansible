@@ -20,9 +20,9 @@
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
-#    - name: Filter VMs that have snapshots
-#      set_fact:
-#        vms_with_snapshots: "{{ vm_info.virtual_machines | selectattr('snapshots', 'defined') | selectattr('snapshots', '!=', []) | list }}"
+    - name: Filter VMs that have snapshots
+      set_fact:
+        vms_with_snapshots: "{{ vm_info.virtual_machines }}" #| selectattr('snapshots', 'defined') | selectattr('snapshots', '!=', []) | list }}"
 
     - name: Show VMs with snapshots
       debug:
