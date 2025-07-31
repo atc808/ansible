@@ -7,7 +7,7 @@
 
   vars:
     esxi_hostname: "10.10.10.3"
-    esxi_username: "{{ lookup('env', 'VMWARE_USERNAME') }}"
+    esxi_username: "{{ lookup('env', 'VMWARE_USER') }}"
     esxi_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
     validate_certs: false
 
