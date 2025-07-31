@@ -1,0 +1,40 @@
+---
+- name: List VMs on ESXi host using vSphere REST API
+  hosts: localhost
+  gather_facts: no
+  vars:
+    vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"
+    vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    validate_certs: false
+
+  tasks:
+    - name: Authenticate to vCenter and get session ID
+      uri:
+        url: "https://{{ vcenter_hostname }}/rest/com/vmware/cis/session"
+        method: POST
+        user: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        force_basic_auth: yes
+        validate_certs: "{{ validate_certs }}"
+        return_content: yes
+      register: login_response
+
+    - name: Set auth token header
+      set_fact:
+        vmware_headers:
+          vmware-api-session-id: "{{ login_response.json.value }}"
+
+    - name: Get list of all VMs
+      uri:
+        url: "https://{{ vcenter_hostname }}/rest/vcenter/vm"
+        method: GET
+        headers: "{{ vmware_headers }}"
+        validate_certs: "{{ validate_certs }}"
+        return_content: yes
+      register: vms_list
+
+    - name: Show list of VMs
+      debug:
+        msg: "{{ item.name }}"
+      loop: "{{ vms_list.json.value }}"
