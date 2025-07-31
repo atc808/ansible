@@ -2,8 +2,7 @@
 - name: Find VMs with mounted CD/DVD media on ESXi
   hosts: localhost
   gather_facts: no
-  collections:
-    - community.vmware
+
 
   vars:
     hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
@@ -13,7 +12,7 @@
 
   tasks:
     - name: Retrieve all VMs from vCenter/ESXi
-      community.vmware.vmware_vm_info:
+      vmware_vm_info:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
