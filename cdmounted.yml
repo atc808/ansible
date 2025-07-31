@@ -6,9 +6,9 @@
     - community.vmware
 
   vars:
-    hostname: "10.10.10.3"
-    username: "{{ lookup('env', 'VMWARE_USER') }}"
-    password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    esxi_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    esxi_username: "{{ lookup('env', 'VMWARE_USER') }}"
+    esxi_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
     validate_certs: false
 
   tasks:
