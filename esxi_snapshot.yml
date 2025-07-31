@@ -27,9 +27,14 @@
       register: snapshot_results
 
     - name: Show VMs with snapshot details
+      vars:
+        vm_name: >-
+          {{
+            (vms.virtual_machines | selectattr('uuid', 'equalto', item.invocation.module_args.uuid) | first).name
+          }}
       debug:
         msg: |
-          VM with UUID {{ item.invocation.module_args.uuid }} has snapshots:
+          VM {{ vm_name }} has snapshots:
           {% for snap in item.snapshot_info.snapshots %}
             - Name: {{ snap.name }}
               Description: {{ snap.description | default('N/A') }}
