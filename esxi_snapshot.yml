@@ -27,4 +27,5 @@
     - name: Show VMs with snapshots
       debug:
         msg: "VM {{ item.name }} has snapshots"
-      loop: "{{ vms_with_snapshots }}"
+      loop: "{{ vm_info.virtual_machines }}"
+      when: item.snapshots is defined and item.snapshots | length > 0
