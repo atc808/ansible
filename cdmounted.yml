@@ -20,7 +20,7 @@
       register: vm_info
 
     - name: Dismount CD/DVD media from identified VM
-      vmware_guest_cd_drive:
+      vmware_guest_cdrom:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
