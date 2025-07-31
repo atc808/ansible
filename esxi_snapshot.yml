@@ -17,7 +17,7 @@
         hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
         password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
-        show_snapshots: true
+        
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
