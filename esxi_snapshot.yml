@@ -2,26 +2,20 @@
 - name: List VMs with snapshots on ESXi
   hosts: localhost
   gather_facts: no
-  #collections:
-  #  - community.vmware
 
   vars:
-  #  esxi_host: "192.168.1.100"
-  #  esxi_user: "root"
-  #  esxi_pass: "your_password"
     validate_certs: false
 
   tasks:
-    - name: Get detailed list of all VMs (including snapshots)
+    - name: Get detailed list of all VMs (including UUIDs)
       vmware_vm_info:
         hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
         password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
         validate_certs: "{{ validate_certs }}"
-
       register: vms
 
-    - name: Get list of all VMs on ESXi host
+    - name: Get snapshot info for each VM
       vmware_guest_snapshot_info:
         hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
         username: "{{ lookup('env', 'VMWARE_USER') }}"
@@ -29,13 +23,11 @@
         datacenter: "Virtual machine"
         uuid: "{{ item.uuid }}"
         validate_certs: "{{ validate_certs }}"
-      delegate_to: localhost  
-      register: vm_info
       loop: "{{ vms.virtual_machines }}"
-
+      register: snapshot_results
 
     - name: Show VMs with snapshots
       debug:
-        msg: "VM {{ item.name }} has snaxpsots"
-      loop: "{{ vm_info }}"
-      
+        msg: "VM {{ item.invocation.module_args.uuid }} has snapshots"
+      loop: "{{ snapshot_results.results }}"
+      when: item.snapshot_info is defined and item.snapshot_info.snapshots | length > 0
