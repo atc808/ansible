@@ -14,9 +14,9 @@
   tasks:
     - name: Get detailed list of all VMs (including snapshots)
       vmware_vm_info:
-        hostname: "{{ esxi_host }}"
-        username: "{{ esxi_user }}"
-        password: "{{ esxi_pass }}"
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
         validate_certs: "{{ validate_certs }}"
 
       register: vms
