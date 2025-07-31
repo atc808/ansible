@@ -50,3 +50,11 @@
       debug:
         msg: "VM '{{ item.guest_name | default(item.vm_name) }}' has connected CD/DVD device(s)."
       loop: "{{ vms_with_connected_cd }}"
+
+
+    - name: Show CD device details
+      debug:
+        var: item.hardware.device
+      loop: "{{ vms_with_connected_cd }}"
+      loop_control:
+        label: "{{ item.vm_name }}"
