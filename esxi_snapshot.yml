@@ -39,6 +39,6 @@
 
     # - name: Show VMs with snapshots
     #   debug:
-    #     msg: "VM {{ item.name }} has snapshots"
+    #     msg: "VM {{ item.name }} has snapsots"
     #   loop: "{{ vms_with_snapshots }}"
       
