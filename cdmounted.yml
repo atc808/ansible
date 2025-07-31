@@ -46,7 +46,7 @@
         label: "{{ item.name }}"
 
     - name: Dismount CD/DVD media from identified VMs
-      community.vmware.vmware_guest_cd_drive:
+      vmware_guest_cd_drive:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
