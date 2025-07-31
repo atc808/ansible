@@ -6,33 +6,54 @@
     - community.vmware
 
   vars:
-    esxi_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
-    esxi_username: "{{ lookup('env', 'VMWARE_USER') }}"
-    esxi_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    username: "{{ lookup('env', 'VMWARE_USER') }}"
+    password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
     validate_certs: false
 
-  tasks:
-
-    - name: Get list of VMs from ESXi
-      vmware_vm_info:
-        hostname: "{{ esxi_hostname }}"
-        username: "{{ esxi_username }}"
-        password: "{{ esxi_password }}"
+   tasks:
+    - name: Retrieve all VMs from vCenter/ESXi
+      community.vmware.vmware_vm_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
       register: vm_info
 
-    - name: Find VMs with CD/DVD mounted
+    - name: Initialize list of VMs with mounted CD/DVD
       set_fact:
-        vms_with_cd: >-
-          {{
-            vm_info.virtual_machines | selectattr('hardware.device', 'defined') | selectattr('hardware.device', 'select',
-              lambda devs: devs | selectattr('device_info.label', 'search', 'CD/DVD')
-                            | selectattr('connectable.connected', 'equalto', true)
-                            | list
-              ) | list
-          }}
+        vms_with_cd: []
 
-    - name: Show VMs with mounted CD/DVD
+    - name: Identify VMs with a mounted CD/DVD drive
+      vars:
+        # The flag checks for at least one device in the VM's hardware.device list that has a 'device_info.label'
+        # containing "CD/DVD" and with 'connectable.connected' set to true.
+        cd_mounted: >-
+          {{
+            (item.hardware.device | selectattr("device_info.label", "search", "CD/DVD")
+                                   | selectattr("connectable.connected", "equalto", true)
+                                   | list | length) > 0
+          }}
+      set_fact:
+        vms_with_cd: "{{ vms_with_cd + [ item ] }}"
+      loop: "{{ vm_info.virtual_machines }}"
+      when: item.hardware.device is defined and cd_mounted
+
+    - name: Display VMs with mounted CD/DVD media
       debug:
-        msg: "{{ item.name }}"
+        msg: "VM with mounted CD/DVD: {{ item.name }}"
       loop: "{{ vms_with_cd }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Dismount CD/DVD media from identified VMs
+      community.vmware.vmware_guest_cd_drive:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+        name: "{{ item.name }}"
+        state: "absent"
+      loop: "{{ vms_with_cd }}"
+      loop_control:
+        label: "{{ item.name }}"
