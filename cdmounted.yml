@@ -1,18 +1,6 @@
-- name: Display final summary results
-      debug:
-        msg: |
-          ===================================================
-          FINAL SUMMARY for {{ inventory_hostname }}:
-          ===================================================
-          Total VMs scanned: {{ vm_info.virtual_machines | length }}
-          VMs with connected CD devices: {{ vms_with_cd_media | length }}
-          Disconnect variable: {{ disconnect }}
-          ===================================================
-          {% if vms_with_cd_media | length == 0 %}
-          No VMs found with connected CD/DVD devices.
-          {% endif %}---
+---
 - name: Find VMs with ISO files mounted to CD drives
-  hosts: esxi_hosts
+  hosts: all
   gather_facts: false
   connection: local
   
@@ -172,3 +160,17 @@
           {% endif %}
           ===================================================
       when: disconnect | bool or vms_with_cd_media | length > 0
+
+    - name: Display final summary results
+      debug:
+        msg: |
+          ===================================================
+          FINAL SUMMARY for {{ inventory_hostname }}:
+          ===================================================
+          Total VMs scanned: {{ vm_info.virtual_machines | length }}
+          VMs with connected CD devices: {{ vms_with_cd_media | length }}
+          Disconnect variable: {{ disconnect }}
+          ===================================================
+          {% if vms_with_cd_media | length == 0 %}
+          No VMs found with connected CD/DVD devices.
+          {% endif %}
