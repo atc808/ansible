@@ -1,23 +1,26 @@
 ---
 - name: Find VMs with ISO files mounted to CD drives
-  hosts: all
+  hosts: localhost
   gather_facts: false
-  connection: local
   
   vars:
     # AAP credential variables - these will be injected by AAP
     vcenter_username: "{{ ansible_user }}"
     vcenter_password: "{{ ansible_password }}"
+    # For vCenter connection, specify vCenter server and target ESXi host
+    vcenter_hostname: "{{ vcenter_server }}"  # Would be provided as extra var
+    target_esxi_host: "{{ esxi_host }}"       # Would be provided as extra var
     
   tasks:
-    - name: Gather information about all VMs on ESXi host
+    - name: Gather information about all VMs on ESXi host via vCenter
       community.vmware.vmware_vm_info:
-        hostname: "{{ inventory_hostname }}"
+        hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: false
         vm_type: vm
         show_attribute: true
+        esxi_hostname: "{{ target_esxi_host }}"  # Filter VMs by ESXi host
       register: vm_info
       delegate_to: localhost
 
@@ -45,62 +48,43 @@
         vms_with_cd_media: "{{ vms_with_cd_media + [vm_cd_info] }}"
       vars:
         vm_cd_info:
-          vm_name: "{{ item.instance.summary.config.name }}"
-          power_state: "{{ item.instance.summary.runtime.powerState }}"
+          vm_name: "{{ vm_item.guest_name }}"
+          power_state: "{{ vm_item.power_state }}"
           esxi_host: "{{ inventory_hostname }}"
-          cd_devices: "{{ cd_devices_list }}"
-        cd_devices_list: "{{ item.instance.config.hardware.device | 
-          selectattr('deviceInfo.label', 'match', '^CD/DVD.*') |
-          selectattr('backing.fileName', 'defined') |
-          selectattr('connectable.connected', 'equalto', true) |
-          list |
-          map(attribute='backing.fileName') + 
-          (item.instance.config.hardware.device | 
-           selectattr('deviceInfo.label', 'match', '^CD/DVD.*') |
-           selectattr('backing.fileName', 'defined') |
-           selectattr('connectable.connected', 'equalto', true) |
-           list |
-           map(attribute='deviceInfo') |
-           map(attribute='label')) |
-          batch(2) |
-           map('reverse') |
-           list }}"
+          uuid: "{{ vm_item.uuid }}"
+          cd_devices: "{{ cd_devices_with_iso }}"
+        vm_item: "{{ vm_info.virtual_machines[ansible_loop.index0] }}"
+        vm_details_item: "{{ item.instance }}"
+        cd_devices_with_iso: >-
+          {%- set devices = [] -%}
+          {%- if vm_details_item.config is defined and vm_details_item.config.hardware is defined -%}
+            {%- for device in vm_details_item.config.hardware.device -%}
+              {%- if device.deviceInfo is defined and 'CD/DVD' in device.deviceInfo.label -%}
+                {%- if device.backing is defined and device.backing.fileName is defined -%}
+                  {%- if device.connectable is defined and device.connectable.connected -%}
+                    {%- set device_info = {
+                      'device_label': device.deviceInfo.label,
+                      'iso_file': device.backing.fileName,
+                      'connected': device.connectable.connected,
+                      'device_key': device.key
+                    } -%}
+                    {%- set _ = devices.append(device_info) -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ devices }}
       loop: "{{ vm_details.results }}"
       when: 
         - item.instance is defined
-        - item.instance.config.hardware.device | 
-          selectattr('deviceInfo.label', 'match', '^CD/DVD.*') |
-          selectattr('backing.fileName', 'defined') |
-          selectattr('connectable.connected', 'equalto', true) |
-          list | length > 0
+        - vm_details_item.config is defined
+        - vm_details_item.config.hardware is defined
+        - cd_devices_with_iso | length > 0
 
     - name: Refactor CD device information for cleaner output
       set_fact:
-        vms_with_cd_media_clean: "{{ vms_with_cd_media_clean | default([]) + [clean_vm_info] }}"
-      vars:
-        clean_vm_info:
-          vm_name: "{{ item.vm_name }}"
-          power_state: "{{ item.power_state }}"
-          esxi_host: "{{ item.esxi_host }}"
-          cd_drives: "{{ cd_drives_info }}"
-        cd_drives_info: >-
-          {%- set devices = [] -%}
-          {%- for vm in vm_details.results -%}
-            {%- if vm.instance.summary.config.name == item.vm_name -%}
-              {%- for device in vm.instance.config.hardware.device -%}
-                {%- if 'CD/DVD' in device.deviceInfo.label and device.backing.fileName is defined and device.connectable.connected -%}
-                  {%- set device_info = {
-                    'device_label': device.deviceInfo.label,
-                    'iso_file': device.backing.fileName,
-                    'connected': device.connectable.connected,
-                    'device_key': device.key
-                  } -%}
-                  {%- set _ = devices.append(device_info) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ devices }}
+        vms_with_cd_media_clean: "{{ vms_with_cd_media_clean | default([]) + [item] }}"
       loop: "{{ vms_with_cd_media }}"
       when: vms_with_cd_media | length > 0
 
@@ -116,7 +100,7 @@
           VM Name: {{ vm.vm_name }}
           Power State: {{ vm.power_state }}
           CD Drive Details:
-          {% for cd in vm.cd_drives %}
+          {% for cd in vm.cd_devices %}
             - Device: {{ cd.device_label }}
               ISO File: {{ cd.iso_file }}
               Connected: {{ cd.connected }}
