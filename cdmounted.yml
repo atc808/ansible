@@ -1,4 +1,4 @@
-- name: Display final summary results
+- name: Display final summary resul
       debug:
         msg: |
           ===================================================
