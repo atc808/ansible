@@ -129,19 +129,26 @@
         validate_certs: false
         uuid: "{{ item.0.uuid }}"
         cdrom:
-          - controller_number: "{{ item.1.device_key | int // 1000 }}"
-            unit_number: "{{ item.1.device_key | int % 1000 }}"
+          - controller_number: "{{ cd_controller_num }}"
+            unit_number: "{{ cd_unit_num }}"
             state: present
             type: none
+      vars:
+        # VMware IDE controller mapping: device_key 3000-3001 = controller 1, 3002-3003 = controller 1 unit 1
+        # For IDE: controller 0 = primary, controller 1 = secondary
+        cd_controller_num: "{{ 0 if (item.1.device_key | int) < 3002 else 1 }}"
+        cd_unit_num: "{{ (item.1.device_key | int) % 2 }}"
       with_subelements:
         - "{{ vms_with_cd_media }}"
         - cd_devices
       loop_control:
-        label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+        label: "{{ item.0.vm_name }} - {{ item.1.device_label }} (Key:{{ item.1.device_key }})"
       delegate_to: localhost
       when: 
         - disconnect | bool
         - vms_with_cd_media | length > 0
+        - item.1.device_key != 'N/A'
+        - item.1.device_key | int >= 3000
       register: disconnect_results
 
     - name: Display disconnect results
