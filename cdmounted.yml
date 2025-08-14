@@ -273,11 +273,10 @@
           {% if disconnect | bool and vms_with_cd_media | length > 0 %}
           Disconnect operations completed:
           - Successful disconnects: {{ disconnect_results.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
-          - Required prompt handling: {{ disconnect_results.results | default([]) | selectattr('failed', 'equalto', true) | list | length }}
-          - Retry disconnects after prompts: {{ retry_disconnect_results.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
+          - Failed attempts (may need manual intervention): {{ disconnect_results.results | default([]) | selectattr('failed', 'equalto', true) | list | length }}
           
-          All VMs remained powered on throughout the process.
-          Check individual task results above for detailed information.
+          Note: Some SATA controller CD devices may require manual disconnect via vSphere Client
+          if they don't support hot-remove operations while VM is powered on.
           {% elif not disconnect | bool %}
           Disconnect is set to false - no CD devices were disconnected.
           {% else %}
