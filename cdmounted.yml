@@ -1,4 +1,16 @@
----
+- name: Display final summary results
+      debug:
+        msg: |
+          ===================================================
+          FINAL SUMMARY for {{ inventory_hostname }}:
+          ===================================================
+          Total VMs scanned: {{ vm_info.virtual_machines | length }}
+          VMs with connected CD devices: {{ vms_with_cd_media | length }}
+          Disconnect variable: {{ disconnect }}
+          ===================================================
+          {% if vms_with_cd_media | length == 0 %}
+          No VMs found with connected CD/DVD devices.
+          {% endif %}---
 - name: Find VMs with ISO files mounted to CD drives
   hosts: all
   gather_facts: false
@@ -8,6 +20,8 @@
     # AAP credential variables - these will be injected by AAP
     vcenter_username: "{{ ansible_user }}"
     vcenter_password: "{{ ansible_password }}"
+    # Disconnect variable - set to true to automatically disconnect all connected CD devices
+    disconnect: true
     
   tasks:
     - name: Gather information about all VMs on ESXi host
@@ -119,15 +133,42 @@
       loop: "{{ vms_with_cd_media }}"
       when: vms_with_cd_media | length > 0
 
-    - name: Display summary results
+    - name: Disconnect CD devices if requested
+      community.vmware.vmware_guest:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        uuid: "{{ item.0.uuid }}"
+        cdrom:
+          - controller_number: "{{ item.1.device_key | int // 1000 }}"
+            unit_number: "{{ item.1.device_key | int % 1000 }}"
+            state: present
+            type: none
+      with_subelements:
+        - "{{ vms_with_cd_media }}"
+        - cd_devices
+      loop_control:
+        label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+      delegate_to: localhost
+      when: 
+        - disconnect | bool
+        - vms_with_cd_media | length > 0
+      register: disconnect_results
+
+    - name: Display disconnect results
       debug:
         msg: |
           ===================================================
-          FINAL SUMMARY for {{ inventory_hostname }}:
+          CD DISCONNECT RESULTS:
           ===================================================
-          Total VMs scanned: {{ vm_info.virtual_machines | length }}
-          VMs with connected CD devices: {{ vms_with_cd_media | length }}
-          ===================================================
-          {% if vms_with_cd_media | length == 0 %}
-          No VMs found with connected CD/DVD devices.
+          {% if disconnect | bool and vms_with_cd_media | length > 0 %}
+          Attempted to disconnect CD devices from {{ vms_with_cd_media | length }} VMs.
+          Check individual task results above for success/failure details.
+          {% elif not disconnect | bool %}
+          Disconnect is set to false - no CD devices were disconnected.
+          {% else %}
+          No VMs with connected CD devices found to disconnect.
           {% endif %}
+          ===================================================
+      when: disconnect | bool or vms_with_cd_media | length > 0
