@@ -1,4 +1,4 @@
-- name: Display final summary resul
+- name: Display final summary results
       debug:
         msg: |
           ===================================================
@@ -12,7 +12,7 @@
           No VMs found with connected CD/DVD devices.
           {% endif %}---
 - name: Find VMs with ISO files mounted to CD drives
-  hosts: all
+  hosts: esxi_hosts
   gather_facts: false
   connection: local
   
