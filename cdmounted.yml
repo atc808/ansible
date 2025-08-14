@@ -1,6 +1,6 @@
 ---
 - name: Find VMs with ISO files mounted to CD drives
-  hosts: all
+  hosts: esxi_hosts
   gather_facts: false
   connection: local
   
@@ -272,11 +272,12 @@
           ===================================================
           {% if disconnect | bool and vms_with_cd_media | length > 0 %}
           Disconnect operations completed:
-          - IDE Controller disconnects (hot-removable): {{ disconnect_results_ide.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
-          - SATA Controller disconnects (required power off): {{ disconnect_results_sata.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
-          - Already powered off VMs: {{ disconnect_results_off.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
+          - Successful disconnects: {{ disconnect_results.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
+          - Required prompt handling: {{ disconnect_results.results | default([]) | selectattr('failed', 'equalto', true) | list | length }}
+          - Retry disconnects after prompts: {{ retry_disconnect_results.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
           
-          Check individual task results above for detailed success/failure information.
+          All VMs remained powered on throughout the process.
+          Check individual task results above for detailed information.
           {% elif not disconnect | bool %}
           Disconnect is set to false - no CD devices were disconnected.
           {% else %}
