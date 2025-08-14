@@ -21,92 +21,41 @@
       register: vm_info
       delegate_to: localhost
 
-    - name: Initialize results list
-      set_fact:
-        vms_with_cd_media: []
-
-    - name: Get detailed hardware info and check for CD media
-      block:
-        - name: Get VM hardware details
-          community.vmware.vmware_guest_info:
-            hostname: "{{ inventory_hostname }}"
-            username: "{{ vcenter_username }}"
-            password: "{{ vcenter_password }}"
-            validate_certs: false
-            uuid: "{{ item.uuid }}"
-            schema: "vsphere"
-            properties:
-              - "config.hardware.device"
-          register: vm_detail
-          delegate_to: localhost
-
-        - name: Check for CD devices with mounted ISOs
-          set_fact:
-            iso_devices: []
-
-        - name: Find CD/DVD devices with ISO files
-          set_fact:
-            iso_devices: "{{ iso_devices + [cd_device_info] }}"
-          vars:
-            cd_device_info:
-              device_label: "{{ device.deviceInfo.label }}"
-              iso_file: "{{ device.backing.fileName }}"
-              connected: "{{ device.connectable.connected }}"
-              device_key: "{{ device.key | default('N/A') }}"
-          loop: "{{ vm_detail.instance.config.hardware.device }}"
-          loop_control:
-            loop_var: device
-          when:
-            - vm_detail.instance.config is defined
-            - vm_detail.instance.config.hardware is defined
-            - device.deviceInfo is defined
-            - "'CD/DVD' in device.deviceInfo.label"
-            - device.backing is defined
-            - device.backing.fileName is defined
-            - device.connectable is defined
-            - device.connectable.connected == true
-
-        - name: Add VM to results if CD media found
-          set_fact:
-            vms_with_cd_media: "{{ vms_with_cd_media + [vm_result] }}"
-          vars:
-            vm_result:
-              vm_name: "{{ item.guest_name }}"
-              power_state: "{{ item.power_state }}"
-              uuid: "{{ item.uuid }}"
-              esxi_host: "{{ inventory_hostname }}"
-              cd_devices: "{{ iso_devices }}"
-          when: iso_devices | length > 0
-
+    - name: Get VM hardware details for each VM
+      community.vmware.vmware_guest_info:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        uuid: "{{ item.uuid }}"
+        schema: "vsphere"
+        properties:
+          - "config.hardware.device"
+      register: vm_hardware_details
       loop: "{{ vm_info.virtual_machines }}"
+      delegate_to: localhost
 
-    - name: Display results summary
+    - name: Display VM hardware structure for debugging
+      debug:
+        msg: "VM: {{ vm_info.virtual_machines[0].guest_name }}, Hardware keys: {{ vm_hardware_details.results[0].instance.keys() | list }}"
+      when: 
+        - vm_info.virtual_machines | length > 0
+        - vm_hardware_details.results | length > 0
+        - vm_hardware_details.results[0].instance is defined
+
+    - name: Check each VM for CD devices manually (simple approach)
+      debug:
+        msg: |
+          Checking VM: {{ vm_info.virtual_machines[item].guest_name }}
+          Power State: {{ vm_info.virtual_machines[item].power_state }}
+          Hardware available: {{ vm_hardware_details.results[item].instance.config is defined }}
+      loop: "{{ range(0, vm_info.virtual_machines|length) | list }}"
+      when: vm_hardware_details.results[item].instance is defined
+
+    - name: Simple summary
       debug:
         msg: |
           ===================================================
           ESXi Host: {{ inventory_hostname }}
+          Total VMs found: {{ vm_info.virtual_machines | length }}
           ===================================================
-          Total VMs: {{ vm_info.virtual_machines | length }}
-          VMs with mounted ISOs: {{ vms_with_cd_media | length }}
-
-    - name: Display detailed results for VMs with ISO media
-      debug:
-        msg: |
-          VM Name: {{ item.vm_name }}
-          Power State: {{ item.power_state }}
-          UUID: {{ item.uuid }}
-          CD/DVD Devices with ISO files:
-          {% for cd in item.cd_devices %}
-          - Device: {{ cd.device_label }}
-            ISO File: {{ cd.iso_file }}
-            Connected: {{ cd.connected }}
-            Device Key: {{ cd.device_key }}
-          {% endfor %}
-          ---
-      loop: "{{ vms_with_cd_media }}"
-      when: vms_with_cd_media | length > 0
-
-    - name: Display message if no VMs found with CD media
-      debug:
-        msg: "No VMs found with ISO files mounted to CD drives on {{ inventory_hostname }}"
-      when: vms_with_cd_media | length == 0
