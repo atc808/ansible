@@ -1,6 +1,6 @@
 ---
 - name: Find VMs with ISO files mounted to CD drives
-  hosts: all
+  hosts: esxi_hosts
   gather_facts: false
   connection: local
   
@@ -128,6 +128,7 @@
         password: "{{ vcenter_password }}"
         validate_certs: false
         uuid: "{{ item.0.uuid }}"
+        force: true
         cdrom:
           - controller_number: "{{ cd_controller_num }}"
             unit_number: "{{ cd_unit_num }}"
@@ -142,7 +143,7 @@
         - "{{ vms_with_cd_media }}"
         - cd_devices
       loop_control:
-        label: "{{ item.0.vm_name }} - {{ item.1.device_label }} (Key:{{ item.1.device_key }})"
+        label: "{{ item.0.vm_name }} - {{ item.1.device_label }} (Key:{{ item.1.device_key }}) - FORCED DISCONNECT"
       delegate_to: localhost
       when: 
         - disconnect | bool
