@@ -1,6 +1,6 @@
 ---
 - name: Find VMs with ISO files mounted to CD drives
-  hosts: all
+  hosts: esxi_hosts
   gather_facts: false
   connection: local
   
@@ -121,7 +121,7 @@
       loop: "{{ vms_with_cd_media }}"
       when: vms_with_cd_media | length > 0
 
-    - name: Disconnect CD devices if requested
+    - name: Disconnect CD devices if requested (powered off VMs)
       community.vmware.vmware_guest:
         hostname: "{{ inventory_hostname }}"
         username: "{{ vcenter_username }}"
@@ -135,10 +135,22 @@
             state: present
             type: none
       vars:
-        # VMware IDE controller mapping: device_key 3000-3001 = controller 1, 3002-3003 = controller 1 unit 1
-        # For IDE: controller 0 = primary, controller 1 = secondary
-        cd_controller_num: "{{ 0 if (item.1.device_key | int) < 3002 else 1 }}"
-        cd_unit_num: "{{ (item.1.device_key | int) % 2 }}"
+        # VMware controller mapping
+        # IDE: 3000-3003 (controller 0-1)
+        # SATA: 15000+ (controller 0+)
+        # SCSI: varies
+        cd_controller_num: >-
+          {%- if (item.1.device_key | int) >= 15000 -%}
+            {{ ((item.1.device_key | int) - 15000) // 30 }}
+          {%- else -%}
+            {{ 0 if (item.1.device_key | int) < 3002 else 1 }}
+          {%- endif -%}
+        cd_unit_num: >-
+          {%- if (item.1.device_key | int) >= 15000 -%}
+            {{ ((item.1.device_key | int) - 15000) % 30 }}
+          {%- else -%}
+            {{ (item.1.device_key | int) % 2 }}
+          {%- endif -%}
       with_subelements:
         - "{{ vms_with_cd_media }}"
         - cd_devices
@@ -150,7 +162,107 @@
         - vms_with_cd_media | length > 0
         - item.1.device_key != 'N/A'
         - item.1.device_key | int >= 3000
-      register: disconnect_results
+        - item.0.power_state == "poweredOff"
+      register: disconnect_results_off
+
+    - name: Power off VMs that need CD disconnect but are powered on
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        uuid: "{{ item.0.uuid }}"
+        state: powered-off
+        force: true
+      with_subelements:
+        - "{{ vms_with_cd_media }}"
+        - cd_devices
+      loop_control:
+        label: "{{ item.0.vm_name }} - Powering off for CD disconnect"
+      delegate_to: localhost
+      when: 
+        - disconnect | bool
+        - vms_with_cd_media | length > 0
+        - item.1.device_key != 'N/A'
+        - item.1.device_key | int >= 15000  # SATA controllers that don't support hot-remove
+        - item.0.power_state == "poweredOn"
+      register: poweroff_results
+
+    - name: Disconnect CD devices from powered off VMs (SATA controllers)
+      community.vmware.vmware_guest:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        uuid: "{{ item.0.uuid }}"
+        force: true
+        cdrom:
+          - controller_number: "{{ ((item.1.device_key | int) - 15000) // 30 }}"
+            unit_number: "{{ ((item.1.device_key | int) - 15000) % 30 }}"
+            state: present
+            type: none
+      with_subelements:
+        - "{{ vms_with_cd_media }}"
+        - cd_devices
+      loop_control:
+        label: "{{ item.0.vm_name }} - {{ item.1.device_label }} (Key:{{ item.1.device_key }}) - FORCED DISCONNECT AFTER POWEROFF"
+      delegate_to: localhost
+      when: 
+        - disconnect | bool
+        - vms_with_cd_media | length > 0
+        - item.1.device_key != 'N/A'
+        - item.1.device_key | int >= 15000
+        - poweroff_results is defined
+      register: disconnect_results_sata
+
+    - name: Power VMs back on after CD disconnect
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        uuid: "{{ item.0.uuid }}"
+        state: powered-on
+      with_subelements:
+        - "{{ vms_with_cd_media }}"
+        - cd_devices
+      loop_control:
+        label: "{{ item.0.vm_name }} - Powering back on after CD disconnect"
+      delegate_to: localhost
+      when: 
+        - disconnect | bool
+        - vms_with_cd_media | length > 0
+        - item.1.device_key | int >= 15000
+        - poweroff_results is defined
+        - item.0.power_state == "poweredOn"  # Only power back on if it was originally on
+      register: poweron_results
+
+    - name: Disconnect CD devices if requested (IDE controllers - hot removable)
+      community.vmware.vmware_guest:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        uuid: "{{ item.0.uuid }}"
+        force: true
+        cdrom:
+          - controller_number: "{{ 0 if (item.1.device_key | int) < 3002 else 1 }}"
+            unit_number: "{{ (item.1.device_key | int) % 2 }}"
+            state: present
+            type: none
+      with_subelements:
+        - "{{ vms_with_cd_media }}"
+        - cd_devices
+      loop_control:
+        label: "{{ item.0.vm_name }} - {{ item.1.device_label }} (Key:{{ item.1.device_key }}) - HOT DISCONNECT"
+      delegate_to: localhost
+      when: 
+        - disconnect | bool
+        - vms_with_cd_media | length > 0
+        - item.1.device_key != 'N/A'
+        - item.1.device_key | int >= 3000
+        - item.1.device_key | int < 15000  # IDE controllers
+      register: disconnect_results_ide
 
     - name: Display disconnect results
       debug:
@@ -159,8 +271,12 @@
           CD DISCONNECT RESULTS:
           ===================================================
           {% if disconnect | bool and vms_with_cd_media | length > 0 %}
-          Attempted to disconnect CD devices from {{ vms_with_cd_media | length }} VMs.
-          Check individual task results above for success/failure details.
+          Disconnect operations completed:
+          - IDE Controller disconnects (hot-removable): {{ disconnect_results_ide.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
+          - SATA Controller disconnects (required power off): {{ disconnect_results_sata.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
+          - Already powered off VMs: {{ disconnect_results_off.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
+          
+          Check individual task results above for detailed success/failure information.
           {% elif not disconnect | bool %}
           Disconnect is set to false - no CD devices were disconnected.
           {% else %}
