@@ -1,6 +1,5 @@
 ---
-- name: Find VMs with ISO files mounted to CD drives
-  hosts: all
+- name: Find VMs with ISO files mounted to CD drives  hosts: all
   gather_facts: false
   connection: local
   
