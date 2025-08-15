@@ -1,5 +1,6 @@
 ---
-- name: Find VMs with ISO files mounted to CD drives  hosts: all
+- name: Find and optionally disconnect VMs with ISO files mounted to CD drives
+  hosts: all
   gather_facts: false
   connection: local
   
@@ -7,11 +8,62 @@
     # AAP credential variables - these will be injected by AAP
     vcenter_username: "{{ ansible_user }}"
     vcenter_password: "{{ ansible_password }}"
-    # Disconnect variable - set to true to automatically disconnect all connected CD devices
+    
+    # Control variables
     disconnect: true
+    dry_run: false  # Set to true to see what would be disconnected without making changes
+    
+    # VM blacklist - VMs to exclude from disconnect operations (case-sensitive)
+    vm_blacklist: []
+    # Example: vm_blacklist: ["critical-vm-01", "production-db", "backup-server"]
+    
+    # Internal variables
+    failed_vms: []
+    processed_vms: []
     
   tasks:
-    - name: Gather information about all VMs on ESXi host
+    - name: Validate required variables
+      assert:
+        that:
+          - vcenter_username is defined and vcenter_username | length > 0
+          - vcenter_password is defined and vcenter_password | length > 0
+          - inventory_hostname is defined
+        fail_msg: "Missing required connection credentials or hostname"
+        quiet: true
+
+    - name: Display operation mode
+      debug:
+        msg: |
+          ===================================================
+          OPERATION MODE:
+          ===================================================
+          Target ESXi Host: {{ inventory_hostname }}
+          Disconnect Mode: {{ disconnect }}
+          Dry Run Mode: {{ dry_run }}
+          VM Blacklist: {{ vm_blacklist | length }} VMs excluded
+          ===================================================
+
+    - name: Test connection to ESXi host
+      community.vmware.vmware_vm_info:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        vm_type: vm
+        show_attribute: false
+      register: connection_test
+      delegate_to: localhost
+      failed_when: false
+      changed_when: false
+
+    - name: Validate ESXi connection
+      assert:
+        that:
+          - connection_test is not failed
+          - connection_test.virtual_machines is defined
+        fail_msg: "Failed to connect to ESXi host {{ inventory_hostname }}: {{ connection_test.msg | default('Unknown error') }}"
+
+    - name: Gather VM information from ESXi host
       community.vmware.vmware_vm_info:
         hostname: "{{ inventory_hostname }}"
         username: "{{ vcenter_username }}"
@@ -21,82 +73,51 @@
         show_attribute: true
       register: vm_info
       delegate_to: localhost
+      retries: 3
+      delay: 5
+      until: vm_info is not failed
 
-    - name: Get VM hardware details for each VM
-      community.vmware.vmware_guest_info:
-        hostname: "{{ inventory_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: false
-        uuid: "{{ item.uuid }}"
-        schema: "vsphere"
-        properties:
-          - "config.hardware.device"
-      register: vm_hardware_details
-      loop: "{{ vm_info.virtual_machines }}"
-      delegate_to: localhost
-
-    - name: Display VM hardware structure for debugging
-      debug:
-        msg: "VM: {{ vm_info.virtual_machines[0].guest_name }}, Hardware keys: {{ vm_hardware_details.results[0].instance.keys() | list }}"
-      when: 
-        - vm_info.virtual_machines | length > 0
-        - vm_hardware_details.results | length > 0
-        - vm_hardware_details.results[0].instance is defined
-
-    - name: Initialize list for VMs with CD media
+    - name: Initialize tracking variables
       set_fact:
         vms_with_cd_media: []
+        failed_vm_queries: []
+        total_vms_found: "{{ vm_info.virtual_machines | length }}"
 
-    - name: Check each VM for connected CD devices
-      set_fact:
-        vms_with_cd_media: "{{ vms_with_cd_media + [vm_cd_result] }}"
-      vars:
-        vm_basic_info: "{{ vm_info.virtual_machines[item] }}"
-        vm_hardware_info: "{{ vm_hardware_details.results[item].instance }}"
-        vm_cd_result:
-          vm_name: "{{ vm_basic_info.guest_name }}"
-          power_state: "{{ vm_basic_info.power_state }}"
-          uuid: "{{ vm_basic_info.uuid }}"
-          esxi_host: "{{ inventory_hostname }}"
-          cd_devices: "{{ found_cd_devices }}"
-        found_cd_devices: >-
-          {%- set cd_list = [] -%}
-          {%- if vm_hardware_info.config is defined and vm_hardware_info.config.hardware is defined -%}
-            {%- for device in vm_hardware_info.config.hardware.device -%}
-              {%- if device.deviceInfo is defined and device.deviceInfo.label is defined -%}
-                {%- if 'CD/DVD' in device.deviceInfo.label or 'cdrom' in device.deviceInfo.label -%}
-                  {%- if device.connectable is defined and device.connectable.connected == true -%}
-                    {%- set cd_info = {} -%}
-                    {%- set _ = cd_info.update({'device_label': device.deviceInfo.label}) -%}
-                    {%- set _ = cd_info.update({'device_key': device.key | default('N/A')}) -%}
-                    {%- set _ = cd_info.update({'connected': device.connectable.connected}) -%}
-                    {%- if device.backing is defined -%}
-                      {%- if device.backing.fileName is defined -%}
-                        {%- set _ = cd_info.update({'media_type': 'ISO File'}) -%}
-                        {%- set _ = cd_info.update({'media_path': device.backing.fileName}) -%}
-                      {%- elif device.backing.deviceName is defined -%}
-                        {%- set _ = cd_info.update({'media_type': 'Physical Drive'}) -%}
-                        {%- set _ = cd_info.update({'media_path': device.backing.deviceName}) -%}
-                      {%- else -%}
-                        {%- set _ = cd_info.update({'media_type': 'Connected (no media details)'}) -%}
-                        {%- set _ = cd_info.update({'media_path': 'N/A'}) -%}
-                      {%- endif -%}
-                    {%- else -%}
-                      {%- set _ = cd_info.update({'media_type': 'Connected (no backing info)'}) -%}
-                      {%- set _ = cd_info.update({'media_path': 'N/A'}) -%}
-                    {%- endif -%}
-                    {%- set _ = cd_list.append(cd_info) -%}
-                  {%- endif -%}
-                {%- endif -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endif -%}
-          {{ cd_list }}
-      loop: "{{ range(0, vm_info.virtual_machines|length) | list }}"
-      when: 
-        - vm_hardware_details.results[item].instance is defined
-        - found_cd_devices | length > 0
+    - name: Display VM discovery summary
+      debug:
+        msg: "Found {{ total_vms_found }} VMs on {{ inventory_hostname }}"
+
+    - name: Get hardware details for each VM
+      block:
+        - name: Query VM hardware information
+          community.vmware.vmware_guest_info:
+            hostname: "{{ inventory_hostname }}"
+            username: "{{ vcenter_username }}"
+            password: "{{ vcenter_password }}"
+            validate_certs: false
+            uuid: "{{ item.uuid }}"
+            schema: "vsphere"
+            properties:
+              - "config.hardware.device"
+          register: vm_hardware_query
+          loop: "{{ vm_info.virtual_machines }}"
+          loop_control:
+            label: "{{ item.guest_name | default('Unknown') }}"
+          delegate_to: localhost
+          failed_when: false
+          retries: 2
+          delay: 2
+
+        - name: Process VM hardware results
+          include_tasks: process_vm_hardware.yml
+          vars:
+            vm_basic: "{{ vm_info.virtual_machines[ansible_loop.index0] }}"
+            vm_hardware: "{{ item }}"
+            vm_index: "{{ ansible_loop.index0 }}"
+          loop: "{{ vm_hardware_query.results }}"
+          loop_control:
+            extended: true
+          when: item is not failed and item.instance is defined
 
     - name: Display VMs with connected CD devices
       debug:
@@ -106,111 +127,235 @@
           ===================================================
           VM Name: {{ item.vm_name }}
           Power State: {{ item.power_state }}
-          UUID: {{ item.uuid }}
+          Blacklisted: {{ item.vm_name in vm_blacklist }}
           
           Connected CD/DVD Devices:
           {% for cd in item.cd_devices %}
           - Device: {{ cd.device_label }}
+            Controller Type: {{ cd.controller_type }}
             Media Type: {{ cd.media_type }}
             Media Path: {{ cd.media_path }}
-            Connected: {{ cd.connected }}
             Device Key: {{ cd.device_key }}
+            Hot-Removable: {{ cd.hot_removable }}
           {% endfor %}
           ===================================================
       loop: "{{ vms_with_cd_media }}"
       when: vms_with_cd_media | length > 0
 
-    - name: Disconnect CD devices if requested (VMs remain powered on)
-      community.vmware.vmware_guest:
-        hostname: "{{ inventory_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: false
-        uuid: "{{ item.0.uuid }}"
-        cdrom:
-          - controller_number: "{{ cd_controller_num }}"
-            unit_number: "{{ cd_unit_num }}"
-            state: present
-            type: none
-      vars:
-        # Simplified controller mapping - only handle what we can reliably disconnect
-        # IDE controllers (3000-3003): Hot-removable
-        cd_controller_num: "{{ 0 if (item.1.device_key | int) < 3002 else 1 }}"
-        cd_unit_num: "{{ (item.1.device_key | int) % 2 }}"
-      with_subelements:
-        - "{{ vms_with_cd_media }}"
-        - cd_devices
-      loop_control:
-        label: "{{ item.0.vm_name }} - {{ item.1.device_label }} (Key:{{ item.1.device_key }}) - Controller:{{ cd_controller_num }} Unit:{{ cd_unit_num }}"
-      delegate_to: localhost
+    - name: Perform CD device disconnections
+      block:
+        - name: Filter VMs for disconnect operations
+          set_fact:
+            vms_eligible_for_disconnect: >-
+              {{
+                vms_with_cd_media |
+                rejectattr('vm_name', 'in', vm_blacklist) |
+                selectattr('cd_devices', 'defined') |
+                list
+              }}
+
+        - name: Display dry-run information
+          debug:
+            msg: |
+              ===================================================
+              DRY RUN MODE - NO CHANGES WILL BE MADE
+              ===================================================
+              VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
+              Hot-removable devices that would be disconnected: {{ hot_removable_count }}
+              Devices requiring manual intervention: {{ manual_intervention_count }}
+              ===================================================
+          vars:
+            all_cd_devices: >-
+              {{
+                vms_eligible_for_disconnect |
+                map(attribute='cd_devices') |
+                flatten
+              }}
+            hot_removable_count: >-
+              {{
+                all_cd_devices |
+                selectattr('hot_removable', 'equalto', true) |
+                list | length
+              }}
+            manual_intervention_count: >-
+              {{
+                all_cd_devices |
+                selectattr('hot_removable', 'equalto', false) |
+                list | length
+              }}
+          when: dry_run | bool
+
+        - name: Disconnect hot-removable CD devices
+          community.vmware.vmware_guest:
+            hostname: "{{ inventory_hostname }}"
+            username: "{{ vcenter_username }}"
+            password: "{{ vcenter_password }}"
+            validate_certs: false
+            uuid: "{{ item.0.uuid }}"
+            cdrom:
+              - controller_number: "{{ item.1.controller_number }}"
+                unit_number: "{{ item.1.unit_number }}"
+                state: present
+                type: none
+          with_subelements:
+            - "{{ vms_eligible_for_disconnect }}"
+            - cd_devices
+          loop_control:
+            label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+          delegate_to: localhost
+          when: 
+            - not (dry_run | bool)
+            - item.1.hot_removable | bool
+          register: disconnect_results
+          failed_when: false
+          retries: 2
+          delay: 3
+
+        - name: Report devices requiring manual intervention
+          debug:
+            msg: |
+              ===================================================
+              MANUAL INTERVENTION REQUIRED:
+              ===================================================
+              VM: {{ item.0.vm_name }}
+              Device: {{ item.1.device_label }}
+              Controller: {{ item.1.controller_type }}
+              Media: {{ item.1.media_path }}
+              
+              This device cannot be hot-removed. Use vSphere Client to:
+              1. Edit VM settings
+              2. Remove the CD/DVD drive manually
+              ===================================================
+          with_subelements:
+            - "{{ vms_eligible_for_disconnect }}"
+            - cd_devices
+          loop_control:
+            label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+          when: not (item.1.hot_removable | bool)
+
       when: 
         - disconnect | bool
         - vms_with_cd_media | length > 0
-        - item.1.device_key != 'N/A'
-        - item.1.device_key | int >= 3000
-        - item.1.device_key | int < 15000  # Only IDE controllers - hot-removable
-      register: disconnect_results
-      failed_when: false
 
-    - name: Report SATA controller devices that cannot be hot-disconnected
+    - name: Display operation summary
       debug:
         msg: |
           ===================================================
-          SATA CONTROLLER CD DEVICE (Manual intervention required):
+          OPERATION SUMMARY for {{ inventory_hostname }}:
           ===================================================
-          VM: {{ item.0.vm_name }}
-          Device: {{ item.1.device_label }}
-          Device Key: {{ item.1.device_key }}
-          Media: {{ item.1.media_path }}
-          
-          This device is on a SATA controller and cannot be hot-removed while
-          the VM is powered on. To disconnect:
-          1. Use vSphere Client
-          2. Edit VM settings
-          3. Remove the CD/DVD drive manually
-          ===================================================
-      with_subelements:
-        - "{{ vms_with_cd_media }}"
-        - cd_devices
-      loop_control:
-        label: "{{ item.0.vm_name }} - {{ item.1.device_label }} (SATA - Manual Required)"
-      when:
-        - disconnect | bool
-        - vms_with_cd_media | length > 0
-        - item.1.device_key | int >= 15000  # SATA controllers
-
-    - name: Display disconnect results
-      debug:
-        msg: |
-          ===================================================
-          CD DISCONNECT RESULTS:
-          ===================================================
-          {% if disconnect | bool and vms_with_cd_media | length > 0 %}
-          Disconnect operations completed (ALL VMs REMAINED POWERED ON):
-          - IDE Controller disconnects attempted: {{ disconnect_results.results | default([]) | length }}
-          - Successful IDE disconnects: {{ disconnect_results.results | default([]) | selectattr('changed', 'equalto', true) | list | length }}
-          - SATA devices requiring manual intervention: {{ vms_with_cd_media | selectattr('cd_devices', 'defined') | map(attribute='cd_devices') | flatten | selectattr('device_key', 'defined') | selectattr('device_key', 'ge', 15000) | list | length }}
-          
-          No VMs were powered off during this operation.
-          {% elif not disconnect | bool %}
-          Disconnect is set to false - no CD devices were disconnected.
-          {% else %}
-          No VMs with connected CD devices found to disconnect.
-          {% endif %}
-          ===================================================
-      when: disconnect | bool or vms_with_cd_media | length > 0
-
-    - name: Display final summary results
-      debug:
-        msg: |
-          ===================================================
-          FINAL SUMMARY for {{ inventory_hostname }}:
-          ===================================================
-          Total VMs scanned: {{ vm_info.virtual_machines | length }}
+          Mode: {{ 'DRY RUN' if dry_run else 'LIVE' }}
+          Total VMs scanned: {{ total_vms_found }}
           VMs with connected CD devices: {{ vms_with_cd_media | length }}
-          Disconnect variable: {{ disconnect }}
-          ALL VMs REMAINED POWERED ON THROUGHOUT OPERATION
-          ===================================================
-          {% if vms_with_cd_media | length == 0 %}
-          No VMs found with connected CD/DVD devices.
+          VMs in blacklist: {{ (vms_with_cd_media | selectattr('vm_name', 'in', vm_blacklist) | list) | length }}
+          Failed VM queries: {{ failed_vm_queries | length }}
+          Disconnect operations: {{ 'Enabled' if disconnect else 'Disabled' }}
+          {% if not dry_run and disconnect and vms_with_cd_media | length > 0 %}
+          Successful disconnects: {{ (disconnect_results.results | default([]) | selectattr('changed', 'equalto', true) | list) | length }}
           {% endif %}
+          ===================================================
+
+    - name: Report any failed operations
+      debug:
+        msg: |
+          ===================================================
+          FAILED OPERATIONS:
+          ===================================================
+          {% for failure in failed_vm_queries %}
+          VM: {{ failure.vm_name }}
+          Error: {{ failure.error }}
+          {% endfor %}
+          ===================================================
+      when: failed_vm_queries | length > 0
+
+---
+# Separate task file: process_vm_hardware.yml
+- name: Record failed VM query
+  set_fact:
+    failed_vm_queries: >-
+      {{
+        failed_vm_queries +
+        [{
+          'vm_name': vm_basic.guest_name | default('Unknown'),
+          'uuid': vm_basic.uuid,
+          'error': vm_hardware.msg | default('Hardware query failed')
+        }]
+      }}
+  when: vm_hardware is failed
+
+- name: Process VM with valid hardware data
+  block:
+    - name: Extract CD devices from VM hardware
+      set_fact:
+        current_vm_cd_devices: >-
+          {{
+            vm_hardware.instance.config.hardware.device |
+            default([]) |
+            selectattr('deviceInfo', 'defined') |
+            selectattr('deviceInfo.label', 'defined') |
+            selectattr('deviceInfo.label', 'match', '.*CD/DVD.*|.*cdrom.*') |
+            selectattr('connectable', 'defined') |
+            selectattr('connectable.connected', 'equalto', true) |
+            map('combine', {'controller_info': (
+              vm_hardware.instance.config.hardware.device |
+              selectattr('key', 'equalto', item.controllerKey | default(-1)) |
+              first | default({})
+            )}) |
+            list
+          }}
+
+    - name: Build CD device information
+      set_fact:
+        processed_cd_devices: >-
+          {{
+            current_vm_cd_devices |
+            map('combine', {
+              'device_label': item.deviceInfo.label,
+              'device_key': item.key | default('N/A'),
+              'connected': item.connectable.connected,
+              'controller_type': (
+                'IDE' if (item.key | default(0) | int) < 15000 
+                else 'SATA'
+              ),
+              'hot_removable': (item.key | default(0) | int) < 15000,
+              'controller_number': (
+                0 if (item.key | default(0) | int) < 3002 
+                else 1 if (item.key | default(0) | int) < 15000
+                else ((item.key | default(0) | int - 15000) // 30)
+              ),
+              'unit_number': (
+                (item.key | default(0) | int) % 2 if (item.key | default(0) | int) < 15000
+                else ((item.key | default(0) | int - 15000) % 30)
+              ),
+              'media_type': (
+                'ISO File' if (item.backing.fileName is defined)
+                else 'Physical Drive' if (item.backing.deviceName is defined)
+                else 'Connected (no media details)'
+              ),
+              'media_path': (
+                item.backing.fileName | default(
+                  item.backing.deviceName | default('N/A')
+                )
+              )
+            }) |
+            list
+          }}
+
+    - name: Add VM to results if it has connected CD devices
+      set_fact:
+        vms_with_cd_media: >-
+          {{
+            vms_with_cd_media + [{
+              'vm_name': vm_basic.guest_name,
+              'power_state': vm_basic.power_state,
+              'uuid': vm_basic.uuid,
+              'esxi_host': inventory_hostname,
+              'cd_devices': processed_cd_devices
+            }]
+          }}
+      when: processed_cd_devices | length > 0
+
+  when: 
+    - vm_hardware is not failed
+    - vm_hardware.instance is defined
+    - vm_hardware.instance.config is defined
+    - vm_hardware.instance.config.hardware is defined
