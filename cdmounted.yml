@@ -11,7 +11,7 @@
     
     # Control variables
     disconnect: true
-    dry_run: false  # Set to true to see what would be disconnected without making changes
+    dry_run: false  # Set to true to see what would be disconnected without making cha
     
     # VM blacklist - VMs to exclude from disconnect operations (case-sensitive)
     vm_blacklist: []
