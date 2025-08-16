@@ -353,6 +353,19 @@
     - not (dry_run | bool)
     - python_disconnect_results is defined
 
+- name: Debug API results structure (for troubleshooting)
+  ansible.builtin.debug:
+    msg: |
+      API Results Debug:
+      - Results defined: {{ vmware_api_results is defined }}
+      - Number of results: {{ vmware_api_results.results | default([]) | length }}
+      {% if vmware_api_results.results | default([]) | length > 0 %}
+      - First result structure: {{ vmware_api_results.results[0] | default('No results') }}
+      {% endif %}
+  when: 
+    - not (dry_run | bool)
+    - vmware_api_results is defined
+
 - name: Parse VMware API results
   ansible.builtin.set_fact:
     parsed_results: []
@@ -363,11 +376,11 @@
       {{
         parsed_results + [{
           'item': item.item,
-          'changed': item.status in [200, 204],
-          'failed': item.status >= 400,
-          'operation_success': item.status in [200, 204],
-          'status_code': item.status | default(0),
-          'error_msg': item.msg | default('') if (item.status >= 400) else '',
+          'changed': item.status_code in [200, 204] if item.status_code is defined else false,
+          'failed': item.failed | default(false),
+          'operation_success': (item.status_code in [200, 204] if item.status_code is defined else false) and not (item.failed | default(false)),
+          'status_code': item.status_code | default(0),
+          'error_msg': item.msg | default('') if (item.failed | default(false)) else '',
           'result_type': 'vmware_api'
         }]
       }}
