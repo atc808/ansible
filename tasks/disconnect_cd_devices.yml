@@ -235,20 +235,31 @@
   vars:
     ansible_command_timeout: 300
 
+- name: Debug PowerCLI results structure (for troubleshooting)
+  ansible.builtin.debug:
+    msg: |
+      PowerCLI Results Debug:
+      - Results defined: {{ powercli_disconnect_results is defined }}
+      - Results structure: {{ powercli_disconnect_results | default('Not defined') }}
+      - Number of results: {{ powercli_disconnect_results.results | default([]) | length }}
+  when: 
+    - not (dry_run | bool)
+    - powercli_disconnect_results is defined
+
 - name: Report PowerCLI disconnect results
   ansible.builtin.debug:
     msg: |
       ===================================================
       CD DISCONNECT RESULT:
       ===================================================
-      VM: {{ item.item.0.vm_name }}
-      Device: {{ item.item.1.device_label }}
-      Media Path: {{ item.item.1.media_path }}
-      Hot Removable: {{ item.item.1.hot_removable }}
+      VM: {{ item.item.0.vm_name | default('Unknown VM') }}
+      Device: {{ item.item.1.device_label | default('Unknown Device') }}
+      Media Path: {{ item.item.1.media_path | default('N/A') }}
+      Hot Removable: {{ item.item.1.hot_removable | default('Unknown') }}
       Return Code: {{ item.rc | default('N/A') }}
       
       Output:
-      {{ item.stdout | default('No output') | indent(2) }}
+      {{ item.stdout | default('No output available') | indent(2) }}
       {% if item.stderr is defined and item.stderr | length > 0 %}
       
       Errors:
@@ -256,7 +267,10 @@
       {% endif %}
       ===================================================
   loop: "{{ powercli_disconnect_results.results | default([]) }}"
-  when: not (dry_run | bool)
+  when: 
+    - not (dry_run | bool)
+    - powercli_disconnect_results is defined
+    - powercli_disconnect_results.results is defined
 
 - name: Report devices requiring manual intervention
   ansible.builtin.debug:
@@ -287,25 +301,28 @@
     successful_disconnects: >-
       {{
         powercli_disconnect_results.results | default([]) |
+        selectattr('stdout', 'defined') |
         selectattr('stdout', 'search', 'SUCCESS') |
         list
       }}
     failed_disconnects: >-
       {{
         powercli_disconnect_results.results | default([]) |
-        rejectattr('stdout', 'search', 'SUCCESS') |
+        selectattr('stdout', 'defined') |
         selectattr('stdout', 'search', 'ERROR') |
         list
       }}
     warning_disconnects: >-
       {{
         powercli_disconnect_results.results | default([]) |
+        selectattr('stdout', 'defined') |
         selectattr('stdout', 'search', 'WARNING') |
         list
       }}
     info_disconnects: >-
       {{
         powercli_disconnect_results.results | default([]) |
+        selectattr('stdout', 'defined') |
         selectattr('stdout', 'search', 'INFO: CD/DVD drive already has no media') |
         list
       }}
@@ -314,12 +331,14 @@
   ansible.builtin.set_fact:
     disconnect_results:
       results: "{{ powercli_disconnect_results.results | default([]) }}"
-      successful_count: "{{ successful_disconnects | length }}"
-      failed_count: "{{ failed_disconnects | length }}"
-      warning_count: "{{ warning_disconnects | length }}"
-      already_disconnected_count: "{{ info_disconnects | length }}"
+      successful_count: "{{ successful_disconnects | default([]) | length }}"
+      failed_count: "{{ failed_disconnects | default([]) | length }}"
+      warning_count: "{{ warning_disconnects | default([]) | length }}"
+      already_disconnected_count: "{{ info_disconnects | default([]) | length }}"
       total_processed: "{{ powercli_disconnect_results.results | default([]) | length }}"
-  when: powercli_disconnect_results is defined
+  when: 
+    - powercli_disconnect_results is defined
+    - successful_disconnects is defined
 
 - name: Display disconnect operation summary
   ansible.builtin.debug:
