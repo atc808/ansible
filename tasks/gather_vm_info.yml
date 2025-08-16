@@ -1,0 +1,38 @@
+---
+- name: Test connection to ESXi host
+  community.vmware.vmware_vm_info:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    vm_type: vm
+    show_attribute: false
+  register: connection_test
+  delegate_to: localhost
+  failed_when: false
+  changed_when: false
+
+- name: Validate ESXi connection
+  ansible.builtin.assert:
+    that:
+      - connection_test is not failed
+      - connection_test.virtual_machines is defined
+    fail_msg: "Failed to connect to ESXi host {{ inventory_hostname }}: {{ connection_test.msg | default('Unknown error') }}"
+
+- name: Gather VM information from ESXi host
+  community.vmware.vmware_vm_info:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    vm_type: vm
+    show_attribute: true
+  register: vm_info
+  delegate_to: localhost
+  retries: 3
+  delay: 5
+  until: vm_info is not failed
+
+- name: Display VM discovery summary
+  ansible.builtin.debug:
+    msg: "Found {{ vm_info.virtual_machines | length }} VMs on {{ inventory_hostname }}"

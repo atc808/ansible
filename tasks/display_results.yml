@@ -1,0 +1,23 @@
+---
+- name: Display VMs with connected CD devices
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      VM WITH CD MEDIA FOUND:
+      ===================================================
+      VM Name: {{ item.vm_name }}
+      Power State: {{ item.power_state }}
+      Blacklisted: {{ item.vm_name in vm_blacklist }}
+      
+      Connected CD/DVD Devices:
+      {% for cd in item.cd_devices %}
+      - Device: {{ cd.device_label }}
+        Controller Type: {{ cd.controller_type }}
+        Media Type: {{ cd.media_type }}
+        Media Path: {{ cd.media_path }}
+        Device Key: {{ cd.device_key }}
+        Hot-Removable: {{ cd.hot_removable }}
+        Controller/Unit: {{ cd.controller_number }}/{{ cd.unit_number }}
+      {% endfor %}
+      ===================================================
+  loop: "{{ vms_with_cd_media }}"

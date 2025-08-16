@@ -1,0 +1,137 @@
+---
+- name: Filter VMs for disconnect operations
+  ansible.builtin.set_fact:
+    vms_eligible_for_disconnect: >-
+      {{
+        vms_with_cd_media |
+        rejectattr('vm_name', 'in', vm_blacklist) |
+        selectattr('cd_devices', 'defined') |
+        list
+      }}
+
+- name: Calculate disconnect statistics
+  ansible.builtin.set_fact:
+    all_cd_devices: >-
+      {{
+        vms_eligible_for_disconnect |
+        map(attribute='cd_devices') |
+        flatten
+      }}
+    hot_removable_devices: >-
+      {{
+        vms_eligible_for_disconnect |
+        map(attribute='cd_devices') |
+        flatten |
+        selectattr('hot_removable', 'equalto', true) |
+        list
+      }}
+    manual_intervention_devices: >-
+      {{
+        vms_eligible_for_disconnect |
+        map(attribute='cd_devices') |
+        flatten |
+        selectattr('hot_removable', 'equalto', false) |
+        list
+      }}
+
+- name: Display dry-run information
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      DRY RUN MODE - NO CHANGES WILL BE MADE
+      ===================================================
+      VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
+      Hot-removable devices that would be disconnected: {{ hot_removable_devices | length }}
+      Devices requiring manual intervention: {{ manual_intervention_devices | length }}
+      
+      Hot-removable devices:
+      {% for vm in vms_eligible_for_disconnect %}
+      {% for cd in vm.cd_devices %}
+      {% if cd.hot_removable %}
+      - {{ vm.vm_name }}: {{ cd.device_label }} ({{ cd.media_path }})
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      ===================================================
+  when: dry_run | bool
+
+- name: Disconnect hot-removable CD devices
+  community.vmware.vmware_guest:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    uuid: "{{ item.0.uuid }}"
+    cdrom:
+      - controller_number: "{{ item.1.controller_number }}"
+        unit_number: "{{ item.1.unit_number }}"
+        state: present
+        type: none
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+  delegate_to: localhost
+  when: 
+    - not (dry_run | bool)
+    - item.1.hot_removable | bool
+  register: disconnect_results
+  failed_when: false
+  retries: 2
+  delay: 3
+
+- name: Report successful disconnections
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      SUCCESSFUL DISCONNECTION:
+      ===================================================
+      VM: {{ item.item.0.vm_name }}
+      Device: {{ item.item.1.device_label }}
+      Media: {{ item.item.1.media_path }}
+      Result: {{ 'SUCCESS' if item.changed else 'NO CHANGE NEEDED' }}
+      ===================================================
+  loop: "{{ disconnect_results.results | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - item.item.1.hot_removable | bool
+    - item.failed is not defined or not item.failed
+
+- name: Report failed disconnections
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      FAILED DISCONNECTION:
+      ===================================================
+      VM: {{ item.item.0.vm_name }}
+      Device: {{ item.item.1.device_label }}
+      Error: {{ item.msg | default('Unknown error') }}
+      ===================================================
+  loop: "{{ disconnect_results.results | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - item.failed is defined and item.failed
+
+- name: Report devices requiring manual intervention
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      MANUAL INTERVENTION REQUIRED:
+      ===================================================
+      VM: {{ item.0.vm_name }}
+      Device: {{ item.1.device_label }}
+      Controller: {{ item.1.controller_type }}
+      Media: {{ item.1.media_path }}
+      
+      This device cannot be hot-removed. Use vSphere Client to:
+      1. Edit VM settings
+      2. Remove the CD/DVD drive manually
+      3. Or power off the VM and retry this playbook
+      ===================================================
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+  when: not (item.1.hot_removable | bool)

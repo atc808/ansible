@@ -1,0 +1,48 @@
+---
+- name: Calculate summary statistics
+  ansible.builtin.set_fact:
+    total_vms_found: "{{ vm_info.virtual_machines | length }}"
+    blacklisted_vms: "{{ vms_with_cd_media | selectattr('vm_name', 'in', vm_blacklist) | list }}"
+    successful_disconnects: >-
+      {{
+        disconnect_results.results | default([]) |
+        selectattr('changed', 'equalto', true) |
+        list
+      }}
+
+- name: Display operation summary
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      OPERATION SUMMARY for {{ inventory_hostname }}:
+      ===================================================
+      Mode: {{ 'DRY RUN' if dry_run else 'LIVE' }}
+      Total VMs scanned: {{ total_vms_found }}
+      VMs with connected CD devices: {{ vms_with_cd_media | length }}
+      VMs in blacklist: {{ blacklisted_vms | length }}
+      Failed VM queries: {{ failed_vm_queries | length }}
+      Disconnect operations: {{ 'Enabled' if disconnect else 'Disabled' }}
+      {% if not dry_run and disconnect and vms_with_cd_media | length > 0 %}
+      Successful disconnects: {{ successful_disconnects | length }}
+      {% endif %}
+      
+      {% if blacklisted_vms | length > 0 %}
+      Blacklisted VMs with CD media:
+      {% for vm in blacklisted_vms %}
+      - {{ vm.vm_name }} ({{ vm.cd_devices | length }} devices)
+      {% endfor %}
+      {% endif %}
+      ===================================================
+
+- name: Report any failed operations
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      FAILED OPERATIONS:
+      ===================================================
+      {% for failure in failed_vm_queries %}
+      VM: {{ failure.vm_name }}
+      Error: {{ failure.error }}
+      {% endfor %}
+      ===================================================
+  when: failed_vm_queries | length > 0

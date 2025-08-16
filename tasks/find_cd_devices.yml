@@ -1,0 +1,101 @@
+---
+- name: Initialize CD devices list for current VM
+  ansible.builtin.set_fact:
+    current_vm_cd_devices: []
+
+- name: Debug device scanning for first VM only
+  ansible.builtin.debug:
+    msg: |
+      Scanning {{ vm_hardware.instance.config.hardware.device | length }} devices for VM: {{ vm_item.guest_name }}
+      Looking for CD/DVD devices...
+  when: vm_index == 0
+
+- name: Process each device to find connected CD/DVD devices
+  ansible.builtin.set_fact:
+    current_vm_cd_devices: "{{ current_vm_cd_devices + [cd_device_info] }}"
+  vars:
+    device_key_int: "{{ device.key | default(0) | int }}"
+    is_cd_device: >-
+      {{
+        device.deviceInfo is defined and
+        device.deviceInfo.label is defined and
+        (
+          'CD/DVD' in device.deviceInfo.label or
+          'CD' in device.deviceInfo.label or
+          'DVD' in device.deviceInfo.label or
+          'cdrom' in device.deviceInfo.label.lower()
+        )
+      }}
+    is_connected: >-
+      {{
+        device.connectable is defined and
+        device.connectable.connected is defined and
+        (
+          device.connectable.connected == true or
+          (device.backing is defined and 
+           device.backing.fileName is defined and
+           device.backing.fileName | length > 0)
+        )
+      }}
+    cd_device_info:
+      device_label: "{{ device.deviceInfo.label }}"
+      device_key: "{{ device.key | default('N/A') }}"
+      connected: "{{ device.connectable.connected | default(false) }}"
+      controller_type: "{{ 'IDE' if device_key_int < 15000 else 'SATA' }}"
+      hot_removable: "{{ device_key_int < 15000 }}"
+      controller_number: >-
+        {{
+          0 if device_key_int < 3002
+          else 1 if device_key_int < 15000
+          else ((device_key_int - 15000) // 30)
+        }}
+      unit_number: >-
+        {{
+          device_key_int % 2 if device_key_int < 15000
+          else ((device_key_int - 15000) % 30)
+        }}
+      media_type: >-
+        {{
+          'ISO File' if (device.backing is defined and device.backing.fileName is defined)
+          else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined)
+          else 'Connected (no media details)'
+        }}
+      media_path: >-
+        {{
+          device.backing.fileName | default(
+            device.backing.deviceName | default('N/A')
+          ) if device.backing is defined
+          else 'N/A'
+        }}
+  loop: "{{ vm_hardware.instance.config.hardware.device | default([]) }}"
+  loop_control:
+    loop_var: device
+    label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
+  when: 
+    - is_cd_device | bool
+    - is_connected | bool
+
+- name: Debug CD device detection for first VM
+  ansible.builtin.debug:
+    msg: |
+      Found {{ current_vm_cd_devices | length }} connected CD devices for VM: {{ vm_item.guest_name }}
+      {% for cd in current_vm_cd_devices %}
+      - {{ cd.device_label }}: {{ cd.media_type }} ({{ cd.media_path }})
+      {% endfor %}
+  when: 
+    - vm_index == 0
+    - current_vm_cd_devices | length > 0
+
+- name: Add VM to results if it has connected CD devices
+  ansible.builtin.set_fact:
+    vms_with_cd_media: >-
+      {{
+        vms_with_cd_media + [{
+          'vm_name': vm_item.guest_name,
+          'power_state': vm_item.power_state,
+          'uuid': vm_item.uuid,
+          'esxi_host': inventory_hostname,
+          'cd_devices': current_vm_cd_devices
+        }]
+      }}
+  when: current_vm_cd_devices | length > 0
