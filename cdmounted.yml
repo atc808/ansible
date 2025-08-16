@@ -121,10 +121,9 @@
           debug:
             msg: |
               About to process VM hardware results:
-              - vm_hardware_query defined: {{ vm_hardware_query is defined }}
-              - vm_hardware_query.results defined: {{ vm_hardware_query.results is defined if vm_hardware_query is defined else 'N/A' }}
-              - Results count: {{ vm_hardware_query.results | length if vm_hardware_query.results is defined else 'N/A' }}
-              - Will process: {{ vm_hardware_query.results | length > 0 if vm_hardware_query.results is defined else 'N/A' }}
+              - Results count: {{ vm_hardware_query.results | length }}
+              - First result has instance: {{ vm_hardware_query.results[0].instance is defined }}
+              - First result failed: {{ vm_hardware_query.results[0].failed | default(false) }}
 
         - name: Debug hardware query results
           debug:
@@ -160,19 +159,19 @@
               debug:
                 msg: |
                   Device {{ device_index }}: 
-                  - Label: {{ device.deviceInfo.label | default('No label') }}
-                  - Key: {{ device.key | default('No key') }}
-                  - Type: {{ device | type_debug }}
+                  - Label: '{{ device.deviceInfo.label | default("No label") }}'
+                  - Key: {{ device.key | default("No key") }}
                   - Has deviceInfo: {{ device.deviceInfo is defined }}
                   - Has connectable: {{ device.connectable is defined }}
-                  - Connected: {{ device.connectable.connected if device.connectable is defined else 'N/A' }}
+                  - Connected: {{ device.connectable.connected if device.connectable is defined else "N/A" }}
+                  - Has backing: {{ device.backing is defined }}
               loop: "{{ item.instance.config.hardware.device | default([]) }}"
               loop_control:
                 loop_var: device
                 index_var: device_index
               when: 
                 - ansible_loop.index0 == 0  # Only debug first VM
-                - device_index < 10  # Show first 10 devices
+                - device_index < 15  # Show first 15 devices to catch CD devices
                 - item.instance is defined
                 - item.instance.config is defined
                 - item.instance.config.hardware is defined
