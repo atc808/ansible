@@ -1,5 +1,3 @@
----
-# Separate task file: process_vm_hardware.yml
 - name: Record failed VM query
   set_fact:
     failed_vm_queries: >-
@@ -15,61 +13,67 @@
 
 - name: Process VM with valid hardware data
   block:
-    - name: Extract CD devices from VM hardware
+    - name: Initialize CD devices list
       set_fact:
-        current_vm_cd_devices: >-
-          {{
-            vm_hardware.instance.config.hardware.device |
-            default([]) |
-            selectattr('deviceInfo', 'defined') |
-            selectattr('deviceInfo.label', 'defined') |
-            selectattr('deviceInfo.label', 'match', '.*CD/DVD.*|.*cdrom.*') |
-            selectattr('connectable', 'defined') |
-            selectattr('connectable.connected', 'equalto', true) |
-            map('combine', {'controller_info': (
-              vm_hardware.instance.config.hardware.device |
-              selectattr('key', 'equalto', item.controllerKey | default(-1)) |
-              first | default({})
-            )}) |
-            list
-          }}
+        processed_cd_devices: []
 
-    - name: Build CD device information
+    - name: Process each device to find CD/DVD devices
       set_fact:
-        processed_cd_devices: >-
+        processed_cd_devices: "{{ processed_cd_devices + [cd_device_info] }}"
+      vars:
+        device_key_int: "{{ device.key | default(0) | int }}"
+        is_cd_device: >-
           {{
-            current_vm_cd_devices |
-            map('combine', {
-              'device_label': item.deviceInfo.label,
-              'device_key': item.key | default('N/A'),
-              'connected': item.connectable.connected,
-              'controller_type': (
-                'IDE' if (item.key | default(0) | int) < 15000 
-                else 'SATA'
-              ),
-              'hot_removable': (item.key | default(0) | int) < 15000,
-              'controller_number': (
-                0 if (item.key | default(0) | int) < 3002 
-                else 1 if (item.key | default(0) | int) < 15000
-                else ((item.key | default(0) | int - 15000) // 30)
-              ),
-              'unit_number': (
-                (item.key | default(0) | int) % 2 if (item.key | default(0) | int) < 15000
-                else ((item.key | default(0) | int - 15000) % 30)
-              ),
-              'media_type': (
-                'ISO File' if (item.backing.fileName is defined)
-                else 'Physical Drive' if (item.backing.deviceName is defined)
-                else 'Connected (no media details)'
-              ),
-              'media_path': (
-                item.backing.fileName | default(
-                  item.backing.deviceName | default('N/A')
-                )
-              )
-            }) |
-            list
+            device.deviceInfo is defined and
+            device.deviceInfo.label is defined and
+            (
+              'CD/DVD' in device.deviceInfo.label or
+              'cdrom' in device.deviceInfo.label.lower()
+            )
           }}
+        is_connected: >-
+          {{
+            device.connectable is defined and
+            device.connectable.connected is defined and
+            device.connectable.connected == true
+          }}
+        cd_device_info:
+          device_label: "{{ device.deviceInfo.label }}"
+          device_key: "{{ device.key | default('N/A') }}"
+          connected: "{{ device.connectable.connected }}"
+          controller_type: "{{ 'IDE' if device_key_int < 15000 else 'SATA' }}"
+          hot_removable: "{{ device_key_int < 15000 }}"
+          controller_number: >-
+            {{
+              0 if device_key_int < 3002
+              else 1 if device_key_int < 15000
+              else ((device_key_int - 15000) // 30)
+            }}
+          unit_number: >-
+            {{
+              device_key_int % 2 if device_key_int < 15000
+              else ((device_key_int - 15000) % 30)
+            }}
+          media_type: >-
+            {{
+              'ISO File' if (device.backing is defined and device.backing.fileName is defined)
+              else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined)
+              else 'Connected (no media details)'
+            }}
+          media_path: >-
+            {{
+              device.backing.fileName | default(
+                device.backing.deviceName | default('N/A')
+              ) if device.backing is defined
+              else 'N/A'
+            }}
+      loop: "{{ vm_hardware.instance.config.hardware.device | default([]) }}"
+      loop_control:
+        loop_var: device
+        label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
+      when: 
+        - is_cd_device | bool
+        - is_connected | bool
 
     - name: Add VM to results if it has connected CD devices
       set_fact:
@@ -89,4 +93,4 @@
     - vm_hardware is not failed
     - vm_hardware.instance is defined
     - vm_hardware.instance.config is defined
-    - vm_hardware.instance.config.hardware is defined
+    - vm_hardware.instance.config.hardware is de
