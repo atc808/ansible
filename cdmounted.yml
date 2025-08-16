@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: false
   connection: local
-  
+  #working but doen't answer question on linux hosts
   vars:
     # AAP credential variables - these will be injected by AAP
     vcenter_username: "{{ ansible_user }}"
