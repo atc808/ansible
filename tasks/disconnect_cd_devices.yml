@@ -310,13 +310,28 @@
     - not (dry_run | bool)
     - item.1.hot_removable | bool
 
+- name: Get VM session token for REST API
+  ansible.builtin.uri:
+    url: "https://{{ inventory_hostname }}/rest/com/vmware/cis/session"
+    method: POST
+    user: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    force_basic_auth: yes
+    validate_certs: false
+    headers:
+      Content-Type: "application/json"
+    status_code: [200, 201]
+  delegate_to: localhost
+  register: session_token
+  run_once: true
+  when: 
+    - not (dry_run | bool)
+    - vms_eligible_for_disconnect | selectattr('cd_devices', 'selectattr', 'hot_removable', 'equalto', true) | list | length > 0
+
 - name: Disconnect CD media using VMware REST API
   ansible.builtin.uri:
     url: "https://{{ inventory_hostname }}/rest/vcenter/vm/{{ item.0.uuid }}/hardware/cdrom/{{ item.1.device_key }}"
     method: PATCH
-    user: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    force_basic_auth: yes
     validate_certs: false
     body_format: json
     body:
@@ -327,6 +342,7 @@
         allow_guest_control: true
     headers:
       Content-Type: "application/json"
+      vmware-api-session-id: "{{ session_token.json.value }}"
     status_code: [200, 204]
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
@@ -337,6 +353,8 @@
   when: 
     - not (dry_run | bool)
     - item.1.hot_removable | bool
+    - session_token is defined
+    - session_token.json is defined
   register: vmware_api_results
   failed_when: false
 
