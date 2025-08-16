@@ -1,0 +1,92 @@
+---
+# Separate task file: process_vm_hardware.yml
+- name: Record failed VM query
+  set_fact:
+    failed_vm_queries: >-
+      {{
+        failed_vm_queries +
+        [{
+          'vm_name': vm_basic.guest_name | default('Unknown'),
+          'uuid': vm_basic.uuid,
+          'error': vm_hardware.msg | default('Hardware query failed')
+        }]
+      }}
+  when: vm_hardware is failed
+
+- name: Process VM with valid hardware data
+  block:
+    - name: Extract CD devices from VM hardware
+      set_fact:
+        current_vm_cd_devices: >-
+          {{
+            vm_hardware.instance.config.hardware.device |
+            default([]) |
+            selectattr('deviceInfo', 'defined') |
+            selectattr('deviceInfo.label', 'defined') |
+            selectattr('deviceInfo.label', 'match', '.*CD/DVD.*|.*cdrom.*') |
+            selectattr('connectable', 'defined') |
+            selectattr('connectable.connected', 'equalto', true) |
+            map('combine', {'controller_info': (
+              vm_hardware.instance.config.hardware.device |
+              selectattr('key', 'equalto', item.controllerKey | default(-1)) |
+              first | default({})
+            )}) |
+            list
+          }}
+
+    - name: Build CD device information
+      set_fact:
+        processed_cd_devices: >-
+          {{
+            current_vm_cd_devices |
+            map('combine', {
+              'device_label': item.deviceInfo.label,
+              'device_key': item.key | default('N/A'),
+              'connected': item.connectable.connected,
+              'controller_type': (
+                'IDE' if (item.key | default(0) | int) < 15000 
+                else 'SATA'
+              ),
+              'hot_removable': (item.key | default(0) | int) < 15000,
+              'controller_number': (
+                0 if (item.key | default(0) | int) < 3002 
+                else 1 if (item.key | default(0) | int) < 15000
+                else ((item.key | default(0) | int - 15000) // 30)
+              ),
+              'unit_number': (
+                (item.key | default(0) | int) % 2 if (item.key | default(0) | int) < 15000
+                else ((item.key | default(0) | int - 15000) % 30)
+              ),
+              'media_type': (
+                'ISO File' if (item.backing.fileName is defined)
+                else 'Physical Drive' if (item.backing.deviceName is defined)
+                else 'Connected (no media details)'
+              ),
+              'media_path': (
+                item.backing.fileName | default(
+                  item.backing.deviceName | default('N/A')
+                )
+              )
+            }) |
+            list
+          }}
+
+    - name: Add VM to results if it has connected CD devices
+      set_fact:
+        vms_with_cd_media: >-
+          {{
+            vms_with_cd_media + [{
+              'vm_name': vm_basic.guest_name,
+              'power_state': vm_basic.power_state,
+              'uuid': vm_basic.uuid,
+              'esxi_host': inventory_hostname,
+              'cd_devices': processed_cd_devices
+            }]
+          }}
+      when: processed_cd_devices | length > 0
+
+  when: 
+    - vm_hardware is not failed
+    - vm_hardware.instance is defined
+    - vm_hardware.instance.config is defined
+    - vm_hardware.instance.config.hardware is defined
