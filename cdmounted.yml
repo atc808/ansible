@@ -3,10 +3,9 @@
   hosts: all
   gather_facts: false
   connection: local
-  ##
   
   vars:
-    # AAP credential variables - these will be injected by AAPf
+    # AAP credential variables - these will be injected by AAP
     vcenter_username: "{{ ansible_user }}"
     vcenter_password: "{{ ansible_password }}"
     
@@ -89,251 +88,185 @@
         msg: "Found {{ total_vms_found }} VMs on {{ inventory_hostname }}"
 
     - name: Get hardware details for each VM
-      block:
-        - name: Query VM hardware information
-          community.vmware.vmware_guest_info:
-            hostname: "{{ inventory_hostname }}"
-            username: "{{ vcenter_username }}"
-            password: "{{ vcenter_password }}"
-            validate_certs: false
-            uuid: "{{ item.uuid }}"
-            schema: "vsphere"
-            properties:
-              - "config.hardware.device"
-          register: vm_hardware_query
-          loop: "{{ vm_info.virtual_machines }}"
-          loop_control:
-            label: "{{ item.guest_name | default('Unknown') }}"
-          delegate_to: localhost
-          failed_when: false
-          retries: 2
-          delay: 2
+      community.vmware.vmware_guest_info:
+        hostname: "{{ inventory_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        uuid: "{{ item.uuid }}"
+        schema: "vsphere"
+        properties:
+          - "config.hardware.device"
+      register: vm_hardware_query
+      loop: "{{ vm_info.virtual_machines }}"
+      loop_control:
+        label: "{{ item.guest_name | default('Unknown') }}"
+      delegate_to: localhost
+      failed_when: false
+      retries: 2
+      delay: 2
 
-        - name: Debug raw hardware query results
-          ansible.builtin.debug:
-            msg: |
-              Raw hardware query results:
-              - Query successful: {{ vm_hardware_query is not failed }}
-              - Number of results: {{ vm_hardware_query.results | length }}
-              - Sample result keys: {{ vm_hardware_query.results[0].keys() | list if vm_hardware_query.results | length > 0 else 'No results' }}
-              - Sample VM name: {{ vm_info.virtual_machines[0].guest_name if vm_info.virtual_machines | length > 0 else 'No VMs' }}
+    - name: Debug hardware query results summary
+      ansible.builtin.debug:
+        msg: |
+          Hardware query completed:
+          - Total VMs queried: {{ vm_hardware_query.results | length }}
+          - Successful queries: {{ vm_hardware_query.results | selectattr('failed', 'undefined') | list | length }}
+          - Failed queries: {{ vm_hardware_query.results | selectattr('failed', 'defined') | selectattr('failed', 'equalto', true) | list | length }}
 
-        - name: Pre-loop debugging
-          ansible.builtin.debug:
-            msg: |
-              About to process VM hardware results:
-              - Results count: {{ vm_hardware_query.results | length }}
-              - First result has instance: {{ vm_hardware_query.results[0].instance is defined if vm_hardware_query.results | length > 0 else false }}
-              - First result failed: {{ vm_hardware_query.results[0].failed | default(false) if vm_hardware_query.results | length > 0 else false }}
+    - name: Process each VM to find CD devices with media
+      ansible.builtin.set_fact:
+        vms_with_cd_media: "{{ vms_with_cd_media + [vm_with_cd] }}"
+      vars:
+        vm_basic: "{{ vm_info.virtual_machines[ansible_loop.index0] }}"
+        vm_hardware: "{{ item }}"
+        current_vm_cd_devices: "{{ vm_cd_devices }}"
+        vm_cd_devices: >-
+          {{
+            vm_hardware.instance.config.hardware.device | default([]) |
+            selectattr('deviceInfo', 'defined') |
+            selectattr('deviceInfo.label', 'defined') |
+            select('test', device_filter_regex, 'deviceInfo.label') |
+            selectattr('connectable', 'defined') |
+            selectattr('connectable.connected', 'defined') |
+            selectattr('connectable.connected', 'equalto', true) |
+            map('extract_cd_device_info') |
+            list
+          }}
+        device_filter_regex: '(?i)(CD/DVD|CD|DVD|cdrom)'
+        vm_with_cd:
+          vm_name: "{{ vm_basic.guest_name }}"
+          power_state: "{{ vm_basic.power_state }}"
+          uuid: "{{ vm_basic.uuid }}"
+          esxi_host: "{{ inventory_hostname }}"
+          cd_devices: "{{ current_vm_cd_devices }}"
+      when:
+        - vm_hardware.failed is not defined or not vm_hardware.failed
+        - vm_hardware.instance is defined
+        - vm_hardware.instance.config is defined
+        - vm_hardware.instance.config.hardware is defined
+        - current_vm_cd_devices | length > 0
+      loop: "{{ vm_hardware_query.results }}"
+      loop_control:
+        extended: true
 
-        - name: Debug hardware query results
-          ansible.builtin.debug:
-            msg: |
-              VM {{ ansible_loop.index0 }}: {{ vm_info.virtual_machines[ansible_loop.index0].guest_name }}
-              Query failed: {{ item.failed is defined and item.failed }}
-              Has instance: {{ item.instance is defined }}
-              Instance keys: {{ item.instance.keys() | list if item.instance is defined else 'N/A' }}
-          loop: "{{ vm_hardware_query.results }}"
-          loop_control:
-            extended: true
-          when: ansible_loop.index0 < 3  # Only show first 3 VMs
+    # Custom filter to extract CD device information
+    - name: Set up custom filter for CD device processing
+      ansible.builtin.set_fact:
+        temp_var: "placeholder"
+      vars:
+        extract_cd_device_info: |
+          {%- set device_key_int = device.key | default(0) | int -%}
+          {{
+            {
+              'device_label': device.deviceInfo.label,
+              'device_key': device.key | default('N/A'),
+              'connected': device.connectable.connected,
+              'controller_type': 'IDE' if device_key_int < 15000 else 'SATA',
+              'hot_removable': device_key_int < 15000,
+              'controller_number': (
+                0 if device_key_int < 3002
+                else 1 if device_key_int < 15000
+                else ((device_key_int - 15000) // 30)
+              ),
+              'unit_number': (
+                device_key_int % 2 if device_key_int < 15000
+                else ((device_key_int - 15000) % 30)
+              ),
+              'media_type': (
+                'ISO File' if (device.backing is defined and device.backing.fileName is defined)
+                else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined)
+                else 'Connected (no media details)'
+              ),
+              'media_path': (
+                device.backing.fileName | default(
+                  device.backing.deviceName | default('N/A')
+                ) if device.backing is defined
+                else 'N/A'
+              )
+            }
+          }}
 
-        - name: Debug why processing is skipped
-          ansible.builtin.debug:
-            msg: |
-              Checking VM processing conditions:
-              - item.failed is not defined: {{ item.failed is not defined }}
-              - item.failed value: {{ item.failed | default('undefined') }}
-              - not item.failed: {{ not item.failed if item.failed is defined else 'N/A' }}
-              - item.instance is defined: {{ item.instance is defined }}
-              - item.instance.config is defined: {{ item.instance.config is defined if item.instance is defined else 'N/A' }}
-              - item.instance.config.hardware is defined: {{ item.instance.config.hardware is defined if (item.instance is defined and item.instance.config is defined) else 'N/A' }}
-              - Overall condition result: {{ (item.failed is not defined or not item.failed) and item.instance is defined and item.instance.config is defined and item.instance.config.hardware is defined }}
-          loop: "{{ vm_hardware_query.results }}"
-          loop_control:
-            extended: true
-          when: ansible_loop.index0 < 2  # Only debug first 2 VMs
+    # Let me rewrite this with a simpler approach that works with Ansible 2.15
+    - name: Process VM hardware results to find CD devices
+      ansible.builtin.debug:
+        msg: "Processing VM {{ vm_index }}: {{ vm_basic.guest_name }}"
+      vars:
+        vm_basic: "{{ vm_info.virtual_machines[vm_index] }}"
+        vm_hardware: "{{ item }}"
+      loop: "{{ vm_hardware_query.results }}"
+      loop_control:
+        index_var: vm_index
+      when: 
+        - vm_hardware.failed is not defined or not vm_hardware.failed
+        - vm_hardware.instance is defined
 
-        - name: Process VM hardware results
-          block:
-            - name: Debug VM hardware structure
-              ansible.builtin.debug:
-                msg: |
-                  VM: {{ vm_info.virtual_machines[ansible_loop.index0].guest_name }}
-                  Query failed: {{ item.failed is defined and item.failed }}
-                  Has instance: {{ item.instance is defined }}
-                  Has config: {{ item.instance.config is defined if item.instance is defined else 'N/A' }}
-                  Has hardware: {{ item.instance.config.hardware is defined if (item.instance is defined and item.instance.config is defined) else 'N/A' }}
-                  Device count: {{ item.instance.config.hardware.device | length if (item.instance is defined and item.instance.config is defined and item.instance.config.hardware is defined) else 'N/A' }}
-                  Condition check: {{ (item.failed is not defined or not item.failed) and item.instance is defined and item.instance.config is defined and item.instance.config.hardware is defined }}
-              when: ansible_loop.index0 < 3  # Only show first 3 VMs
+    - name: Build list of VMs with CD devices (simplified approach)
+      ansible.builtin.set_fact:
+        vms_with_cd_media: []
 
-            - name: Initialize CD devices list for current VM
-              ansible.builtin.set_fact:
-                current_vm_cd_devices: []
+    - name: Find CD devices for each VM
+      ansible.builtin.set_fact:
+        vms_with_cd_media: "{{ vms_with_cd_media + [vm_result] }}"
+      vars:
+        vm_basic: "{{ vm_info.virtual_machines[vm_index] }}"
+        vm_hardware: "{{ item }}"
+        cd_devices_found: >-
+          {% set devices = [] %}
+          {% if vm_hardware.instance is defined and vm_hardware.instance.config is defined and vm_hardware.instance.config.hardware is defined %}
+            {% for device in vm_hardware.instance.config.hardware.device %}
+              {% if device.deviceInfo is defined and device.deviceInfo.label is defined %}
+                {% if 'CD/DVD' in device.deviceInfo.label or 'CD' in device.deviceInfo.label or 'DVD' in device.deviceInfo.label or 'cdrom' in device.deviceInfo.label.lower() %}
+                  {% if device.connectable is defined and device.connectable.connected is defined and device.connectable.connected == true %}
+                    {% set device_key_int = device.key | default(0) | int %}
+                    {% set device_info = {
+                      'device_label': device.deviceInfo.label,
+                      'device_key': device.key | default('N/A'),
+                      'connected': device.connectable.connected,
+                      'controller_type': 'IDE' if device_key_int < 15000 else 'SATA',
+                      'hot_removable': device_key_int < 15000,
+                      'controller_number': (0 if device_key_int < 3002 else 1 if device_key_int < 15000 else ((device_key_int - 15000) // 30)),
+                      'unit_number': (device_key_int % 2 if device_key_int < 15000 else ((device_key_int - 15000) % 30)),
+                      'media_type': ('ISO File' if (device.backing is defined and device.backing.fileName is defined) else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined) else 'Connected (no media details)'),
+                      'media_path': (device.backing.fileName | default(device.backing.deviceName | default('N/A')) if device.backing is defined else 'N/A')
+                    } %}
+                    {% set _ = devices.append(device_info) %}
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+          {{ devices }}
+        vm_result:
+          vm_name: "{{ vm_basic.guest_name }}"
+          power_state: "{{ vm_basic.power_state }}"
+          uuid: "{{ vm_basic.uuid }}"
+          esxi_host: "{{ inventory_hostname }}"
+          cd_devices: "{{ cd_devices_found }}"
+      when:
+        - vm_hardware.failed is not defined or not vm_hardware.failed
+        - vm_hardware.instance is defined
+        - vm_hardware.instance.config is defined
+        - vm_hardware.instance.config.hardware is defined
+        - cd_devices_found | length > 0
+      loop: "{{ vm_hardware_query.results }}"
+      loop_control:
+        index_var: vm_index
 
-            - name: Debug device types for first VM (unconditional)
-              ansible.builtin.debug:
-                msg: |
-                  Device {{ device_index }}: 
-                  - Label: '{{ device.deviceInfo.label | default("No label") }}'
-                  - Key: {{ device.key | default("No key") }}
-                  - Has deviceInfo: {{ device.deviceInfo is defined }}
-                  - Has connectable: {{ device.connectable is defined }}
-                  - Connected: {{ device.connectable.connected if device.connectable is defined else "N/A" }}
-                  - Has backing: {{ device.backing is defined }}
-              loop: "{{ item.instance.config.hardware.device | default([]) }}"
-              loop_control:
-                loop_var: device
-                index_var: device_index
-              when: 
-                - ansible_loop.index0 == 0  # Only debug first VM
-                - device_index < 15  # Show first 15 devices to catch CD devices
-                - item.instance is defined
-                - item.instance.config is defined
-                - item.instance.config.hardware is defined
-
-            - name: Process each device to find CD/DVD devices
-              ansible.builtin.set_fact:
-                current_vm_cd_devices: "{{ current_vm_cd_devices + [cd_device_info] }}"
-              vars:
-                device_key_int: "{{ device.key | default(0) | int }}"
-                is_cd_device: >-
-                  {{
-                    device.deviceInfo is defined and
-                    device.deviceInfo.label is defined and
-                    (
-                      'CD/DVD' in device.deviceInfo.label or
-                      'CD' in device.deviceInfo.label or
-                      'DVD' in device.deviceInfo.label or
-                      'cdrom' in device.deviceInfo.label.lower()
-                    )
-                  }}
-                is_connected: >-
-                  {{
-                    device.connectable is defined and
-                    device.connectable.connected is defined and
-                    (
-                      device.connectable.connected == true or
-                      (device.backing is defined and 
-                       device.backing.fileName is defined and
-                       device.backing.fileName | length > 0)
-                    )
-                  }}
-                cd_device_info:
-                  device_label: "{{ device.deviceInfo.label }}"
-                  device_key: "{{ device.key | default('N/A') }}"
-                  connected: "{{ device.connectable.connected }}"
-                  controller_type: "{{ 'IDE' if device_key_int < 15000 else 'SATA' }}"
-                  hot_removable: "{{ device_key_int < 15000 }}"
-                  controller_number: >-
-                    {{
-                      0 if device_key_int < 3002
-                      else 1 if device_key_int < 15000
-                      else ((device_key_int - 15000) // 30)
-                    }}
-                  unit_number: >-
-                    {{
-                      device_key_int % 2 if device_key_int < 15000
-                      else ((device_key_int - 15000) % 30)
-                    }}
-                  media_type: >-
-                    {{
-                      'ISO File' if (device.backing is defined and device.backing.fileName is defined)
-                      else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined)
-                      else 'Connected (no media details)'
-                    }}
-                  media_path: >-
-                    {{
-                      device.backing.fileName | default(
-                        device.backing.deviceName | default('N/A')
-                      ) if device.backing is defined
-                      else 'N/A'
-                    }}
-              loop: "{{ item.instance.config.hardware.device | default([]) }}"
-              loop_control:
-                loop_var: device
-                label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
-              when: 
-                - is_cd_device | bool
-                - is_connected | bool
-
-            - name: Debug CD device detection for first VM
-              ansible.builtin.debug:
-                msg: |
-                  Checking device: {{ device.deviceInfo.label | default('No label') }}
-                  Is CD device: {{ is_cd_device }}
-                  Is connected: {{ is_connected }}
-                  Device key: {{ device.key | default('N/A') }}
-                  Has backing: {{ device.backing is defined }}
-                  Backing type: {{ device.backing | type_debug if device.backing is defined else 'N/A' }}
-              vars:
-                is_cd_device: >-
-                  {{
-                    device.deviceInfo is defined and
-                    device.deviceInfo.label is defined and
-                    (
-                      'CD/DVD' in device.deviceInfo.label or
-                      'CD' in device.deviceInfo.label or
-                      'DVD' in device.deviceInfo.label or
-                      'cdrom' in device.deviceInfo.label.lower()
-                    )
-                  }}
-                is_connected: >-
-                  {{
-                    device.connectable is defined and
-                    device.connectable.connected is defined and
-                    (
-                      device.connectable.connected == true or
-                      (device.backing is defined and 
-                       device.backing.fileName is defined and
-                       device.backing.fileName | length > 0)
-                    )
-                  }}
-              loop: "{{ item.instance.config.hardware.device | default([]) }}"
-              loop_control:
-                loop_var: device
-              when: 
-                - ansible_loop.index0 == 0  # Only debug first VM
-                - is_cd_device | bool  # Only show potential CD devices
-
-            - name: Add VM to results if it has connected CD devices
-              ansible.builtin.set_fact:
-                vms_with_cd_media: >-
-                  {{
-                    vms_with_cd_media + [{
-                      'vm_name': vm_info.virtual_machines[ansible_loop.index0].guest_name,
-                      'power_state': vm_info.virtual_machines[ansible_loop.index0].power_state,
-                      'uuid': vm_info.virtual_machines[ansible_loop.index0].uuid,
-                      'esxi_host': inventory_hostname,
-                      'cd_devices': current_vm_cd_devices
-                    }]
-                  }}
-              when: current_vm_cd_devices | length > 0
-
-          when: 
-            - item.failed is not defined or not item.failed
-            - item.instance is defined
-            - item.instance.config is defined
-            - item.instance.config.hardware is defined
-          loop: "{{ vm_hardware_query.results }}"
-          loop_control:
-            extended: true
-
-        - name: Record failed VM query
-          ansible.builtin.set_fact:
-            failed_vm_queries: >-
-              {{
-                failed_vm_queries + [{
-                  'vm_name': vm_info.virtual_machines[ansible_loop.index0].guest_name | default('Unknown'),
-                  'uuid': vm_info.virtual_machines[ansible_loop.index0].uuid,
-                  'error': item.msg | default('Hardware query failed')
-                }]
-              }}
-          when: item.failed is defined and item.failed
-          loop: "{{ vm_hardware_query.results }}"
-          loop_control:
-            extended: true
+    - name: Record failed VM queries
+      ansible.builtin.set_fact:
+        failed_vm_queries: >-
+          {{
+            failed_vm_queries + [{
+              'vm_name': vm_info.virtual_machines[vm_index].guest_name | default('Unknown'),
+              'uuid': vm_info.virtual_machines[vm_index].uuid,
+              'error': item.msg | default('Hardware query failed')
+            }]
+          }}
+      when: item.failed is defined and item.failed
+      loop: "{{ vm_hardware_query.results }}"
+      loop_control:
+        index_var: vm_index
 
     - name: Display VMs with connected CD devices
       ansible.builtin.debug:
