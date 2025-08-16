@@ -39,23 +39,20 @@
   loop_control:
     loop_var: device
     label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
-  when: 
-    - device.deviceInfo is defined
-    - device.deviceInfo.label is defined
-    - ('CD/DVD' in device.deviceInfo.label or 'CD' in device.deviceInfo.label or 'DVD' in device.deviceInfo.label or 'cdrom' in device.deviceInfo.label.lower())
+  when: false  # Skip this task - we'll do everything in one step
 
 - name: Build controller and unit information for CD devices
   ansible.builtin.set_fact:
     controller_num: >-
       {{
-        0 if device_key_int < 3002
-        else 1 if device_key_int < 15000
-        else ((device_key_int - 15000) // 30)
+        0 if (device.key | default(0) | int) < 3002
+        else 1 if (device.key | default(0) | int) < 15000
+        else (((device.key | default(0) | int) - 15000) // 30)
       }}
     unit_num: >-
       {{
-        device_key_int % 2 if device_key_int < 15000
-        else ((device_key_int - 15000) % 30)
+        (device.key | default(0) | int) % 2 if (device.key | default(0) | int) < 15000
+        else (((device.key | default(0) | int) - 15000) % 30)
       }}
     media_type: >-
       {{
