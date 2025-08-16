@@ -211,19 +211,27 @@
                   result['message'] += 'No media was connected - nothing to disconnect'
                   return result
               
-              # Create device change spec to disconnect media
+              # Create a copy of the existing device for modification
               device_change = vim.vm.device.VirtualDeviceSpec()
               device_change.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
-              device_change.device = cd_device
               
-              # Set to no media - create new backing without media
-              device_change.device.backing = vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo()
+              # Clone the existing device
+              new_device = vim.vm.device.VirtualCdrom()
+              new_device.key = cd_device.key
+              new_device.deviceInfo = cd_device.deviceInfo
+              new_device.controllerKey = cd_device.controllerKey
+              new_device.unitNumber = cd_device.unitNumber
               
-              # Create new connectable device configuration
-              connectable = vim.vm.device.VirtualDevice.ConnectableDevice()
-              connectable.connected = False
-              connectable.startConnected = False
-              device_change.device.connectable = connectable
+              # Set to no media backing
+              new_device.backing = vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo()
+              
+              # Create connectable device settings
+              new_device.connectable = vim.vm.device.VirtualDevice.ConnectableDevice()
+              new_device.connectable.connected = False
+              new_device.connectable.startConnected = False
+              new_device.connectable.allowGuestControl = True
+              
+              device_change.device = new_device
               
               # Create VM config spec
               config_spec = vim.vm.ConfigSpec()
