@@ -143,29 +143,8 @@
                 - device_index < 5  # Only show first 5 devices
 
             - name: Process each device to find CD/DVD devices
-              block:
-                - name: Debug CD device detection
-                  debug:
-                    msg: |
-                      Checking device: {{ device.deviceInfo.label | default('No label') }}
-                      Is CD device: {{ is_cd_device }}
-                      Is connected: {{ is_connected }}
-                      Device info defined: {{ device.deviceInfo is defined }}
-                      Label defined: {{ device.deviceInfo.label is defined if device.deviceInfo is defined else false }}
-                      Connectable defined: {{ device.connectable is defined }}
-                      Connected value: {{ device.connectable.connected if device.connectable is defined else 'N/A' }}
-                  when: 
-                    - ansible_loop.index0 == 0  # Only debug first VM
-                    - (device.deviceInfo is defined and 'CD' in (device.deviceInfo.label | default(''))) or 
-                      (device.deviceInfo is defined and 'dvd' in (device.deviceInfo.label | default('') | lower))
-
-                - name: Add CD device to list
-                  set_fact:
-                    current_vm_cd_devices: "{{ current_vm_cd_devices + [cd_device_info] }}"
-                  when: 
-                    - is_cd_device | bool
-                    - is_connected | bool
-
+              set_fact:
+                current_vm_cd_devices: "{{ current_vm_cd_devices + [cd_device_info] }}"
               vars:
                 device_key_int: "{{ device.key | default(0) | int }}"
                 is_cd_device: >-
@@ -219,6 +198,43 @@
               loop_control:
                 loop_var: device
                 label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
+              when: 
+                - is_cd_device | bool
+                - is_connected | bool
+
+            - name: Debug CD device detection for first VM
+              debug:
+                msg: |
+                  Checking device: {{ device.deviceInfo.label | default('No label') }}
+                  Is CD device: {{ is_cd_device }}
+                  Is connected: {{ is_connected }}
+                  Device key: {{ device.key | default('N/A') }}
+                  Has backing: {{ device.backing is defined }}
+                  Backing type: {{ device.backing | type_debug if device.backing is defined else 'N/A' }}
+              vars:
+                is_cd_device: >-
+                  {{
+                    device.deviceInfo is defined and
+                    device.deviceInfo.label is defined and
+                    (
+                      'CD/DVD' in device.deviceInfo.label or
+                      'CD' in device.deviceInfo.label or
+                      'DVD' in device.deviceInfo.label or
+                      'cdrom' in device.deviceInfo.label.lower()
+                    )
+                  }}
+                is_connected: >-
+                  {{
+                    device.connectable is defined and
+                    device.connectable.connected is defined and
+                    device.connectable.connected == true
+                  }}
+              loop: "{{ item.instance.config.hardware.device | default([]) }}"
+              loop_control:
+                loop_var: device
+              when: 
+                - ansible_loop.index0 == 0  # Only debug first VM
+                - is_cd_device | bool  # Only show potential CD devices
 
             - name: Add VM to results if it has connected CD devices
               set_fact:
