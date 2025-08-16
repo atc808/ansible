@@ -55,6 +55,56 @@
       ===================================================
   when: dry_run | bool
 
+- name: Debug - Check if disconnect operations should run
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      DISCONNECT DEBUG INFORMATION:
+      ===================================================
+      dry_run: {{ dry_run }}
+      disconnect: {{ disconnect }}
+      vms_eligible_for_disconnect count: {{ vms_eligible_for_disconnect | length }}
+      
+      {% if vms_eligible_for_disconnect | length > 0 %}
+      Eligible VMs:
+      {% for vm in vms_eligible_for_disconnect %}
+      - VM: {{ vm.vm_name }}
+        CD devices: {{ vm.cd_devices | length }}
+        Hot removable devices: {{ vm.cd_devices | selectattr('hot_removable', 'equalto', true) | list | length }}
+      {% endfor %}
+      {% endif %}
+      ===================================================
+
+- name: Debug - Check each VM/device combination
+  ansible.builtin.debug:
+    msg: |
+      VM: {{ item.0.vm_name }}
+      Device: {{ item.1.device_label }}
+      Hot Removable: {{ item.1.hot_removable }}
+      Will Process: {{ not (dry_run | bool) and item.1.hot_removable | bool }}
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+
+- name: Check Python and PyVmomi availability
+  ansible.builtin.command:
+    cmd: python3 -c "import sys; import ssl; from pyVim.connect import SmartConnect; print('PyVmomi available')"
+  delegate_to: localhost
+  register: python_check
+  failed_when: false
+  run_once: true
+
+- name: Display Python check results
+  ansible.builtin.debug:
+    msg: |
+      Python/PyVmomi Check:
+      Return Code: {{ python_check.rc }}
+      Output: {{ python_check.stdout | default('No output') }}
+      Error: {{ python_check.stderr | default('No errors') }}
+  run_once: true
+
 - name: Create Python script for CD media disconnection
   ansible.builtin.copy:
     content: |
@@ -213,6 +263,41 @@
     mode: '0755'
   delegate_to: localhost
   run_once: true
+
+- name: Test Python script execution (dry run)
+  ansible.builtin.command:
+    cmd: python3 /tmp/disconnect_cd_media.py
+  delegate_to: localhost
+  register: script_test
+  failed_when: false
+  run_once: true
+
+- name: Display script test results
+  ansible.builtin.debug:
+    msg: |
+      Script Test Results:
+      Return Code: {{ script_test.rc }}
+      Output: {{ script_test.stdout | default('No output') }}
+      Error: {{ script_test.stderr | default('No errors') }}
+  run_once: true
+
+- name: Debug - About to execute disconnect command
+  ansible.builtin.debug:
+    msg: |
+      Executing disconnect for:
+      VM: {{ item.0.vm_name }}
+      Device: {{ item.1.device_label }}
+      UUID: {{ item.0.uuid }}
+      Device Key: {{ item.1.device_key }}
+      Command: python3 /tmp/disconnect_cd_media.py "{{ inventory_hostname }}" "{{ vcenter_username }}" "REDACTED" "{{ item.0.uuid }}" "{{ item.1.device_key }}"
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+  when: 
+    - not (dry_run | bool)
+    - item.1.hot_removable | bool
 
 - name: Disconnect CD devices using Python PyVmomi script
   ansible.builtin.command:
