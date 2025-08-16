@@ -237,20 +237,41 @@
   vars:
     ansible_command_timeout: 120
 
-- name: Parse Python script results
-  ansible.builtin.set_fact:
-    parsed_results: >-
-      {{
-        python_disconnect_results.results | default([]) |
-        map('combine', {
-          'parsed_output': (item.stdout | default('{}') | from_json),
-          'operation_success': (item.rc | default(1)) == 0
-        }) |
-        list
-      }}
+- name: Debug parsed results structure (for troubleshooting)
+  ansible.builtin.debug:
+    msg: |
+      Parsed Results Debug:
+      - Results defined: {{ python_disconnect_results is defined }}
+      - Number of results: {{ python_disconnect_results.results | default([]) | length }}
+      {% if python_disconnect_results.results | default([]) | length > 0 %}
+      - First result structure: {{ python_disconnect_results.results[0] | default('No results') }}
+      {% endif %}
   when: 
     - not (dry_run | bool)
     - python_disconnect_results is defined
+
+- name: Parse Python script results with error handling
+  ansible.builtin.set_fact:
+    parsed_results: []
+
+- name: Parse each result individually
+  ansible.builtin.set_fact:
+    parsed_results: >-
+      {{
+        parsed_results + [{
+          'item': item.item,
+          'rc': item.rc | default(-1),
+          'stdout': item.stdout | default(''),
+          'stderr': item.stderr | default(''),
+          'operation_success': (item.rc | default(1)) == 0,
+          'parsed_output': (item.stdout | default('{}') | from_json) if (item.stdout | default('') | length > 0) else {}
+        }]
+      }}
+  loop: "{{ python_disconnect_results.results | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - python_disconnect_results is defined
+  failed_when: false
 
 - name: Report Python disconnect results
   ansible.builtin.debug:
@@ -273,7 +294,7 @@
       Result Details:
       {{ item.parsed_output.message | default('No message') | indent(2) }}
       
-      {% if item.parsed_output.error and item.parsed_output.error | length > 0 %}
+      {% if item.parsed_output.error is defined and item.parsed_output.error | length > 0 %}
       Error Details:
       {{ item.parsed_output.error | indent(2) }}
       {% endif %}
@@ -321,18 +342,21 @@
     successful_disconnects: >-
       {{
         parsed_results | default([]) |
+        selectattr('operation_success', 'defined') |
         selectattr('operation_success', 'equalto', true) |
         list
       }}
     failed_disconnects: >-
       {{
         parsed_results | default([]) |
+        selectattr('operation_success', 'defined') |
         selectattr('operation_success', 'equalto', false) |
         list
       }}
     already_disconnected: >-
       {{
         parsed_results | default([]) |
+        selectattr('parsed_output', 'defined') |
         selectattr('parsed_output.media_was_connected', 'defined') |
         selectattr('parsed_output.media_was_connected', 'equalto', false) |
         list
