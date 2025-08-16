@@ -108,39 +108,56 @@
           retries: 2
           delay: 2
 
+        - name: Debug hardware query results
+          debug:
+            msg: |
+              VM {{ ansible_loop.index0 }}: {{ vm_info.virtual_machines[ansible_loop.index0].guest_name }}
+              Query failed: {{ item.failed is defined and item.failed }}
+              Has instance: {{ item.instance is defined }}
+              Instance keys: {{ item.instance.keys() | list if item.instance is defined else 'N/A' }}
+          loop: "{{ vm_hardware_query.results }}"
+          loop_control:
+            extended: true
+          when: ansible_loop.index0 < 3  # Only show first 3 VMs
+
         - name: Process VM hardware results
           block:
             - name: Debug VM hardware structure
               debug:
                 msg: |
                   VM: {{ vm_info.virtual_machines[ansible_loop.index0].guest_name }}
+                  Query failed: {{ item.failed is defined and item.failed }}
                   Has instance: {{ item.instance is defined }}
                   Has config: {{ item.instance.config is defined if item.instance is defined else 'N/A' }}
                   Has hardware: {{ item.instance.config.hardware is defined if (item.instance is defined and item.instance.config is defined) else 'N/A' }}
                   Device count: {{ item.instance.config.hardware.device | length if (item.instance is defined and item.instance.config is defined and item.instance.config.hardware is defined) else 'N/A' }}
-              when: ansible_loop.index0 < 3  # Only show first 3 VMs to avoid spam
+                  Condition check: {{ (item.failed is not defined or not item.failed) and item.instance is defined and item.instance.config is defined and item.instance.config.hardware is defined }}
+              when: ansible_loop.index0 < 3  # Only show first 3 VMs
 
             - name: Initialize CD devices list for current VM
               set_fact:
                 current_vm_cd_devices: []
 
-            - name: Debug device types for first VM
+            - name: Debug device types for first VM (unconditional)
               debug:
                 msg: |
-                  Device {{ device_index }}: {{ device.deviceInfo.label | default('No label') }}
-                  Device type: {{ device | type_debug }}
-                  Has deviceInfo: {{ device.deviceInfo is defined }}
-                  Has label: {{ device.deviceInfo.label is defined if device.deviceInfo is defined else 'N/A' }}
-                  Label content: {{ device.deviceInfo.label if (device.deviceInfo is defined and device.deviceInfo.label is defined) else 'N/A' }}
-                  Has connectable: {{ device.connectable is defined }}
-                  Connected: {{ device.connectable.connected if device.connectable is defined else 'N/A' }}
+                  Device {{ device_index }}: 
+                  - Label: {{ device.deviceInfo.label | default('No label') }}
+                  - Key: {{ device.key | default('No key') }}
+                  - Type: {{ device | type_debug }}
+                  - Has deviceInfo: {{ device.deviceInfo is defined }}
+                  - Has connectable: {{ device.connectable is defined }}
+                  - Connected: {{ device.connectable.connected if device.connectable is defined else 'N/A' }}
               loop: "{{ item.instance.config.hardware.device | default([]) }}"
               loop_control:
                 loop_var: device
                 index_var: device_index
               when: 
                 - ansible_loop.index0 == 0  # Only debug first VM
-                - device_index < 5  # Only show first 5 devices
+                - device_index < 10  # Show first 10 devices
+                - item.instance is defined
+                - item.instance.config is defined
+                - item.instance.config.hardware is defined
 
             - name: Process each device to find CD/DVD devices
               set_fact:
