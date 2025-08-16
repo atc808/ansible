@@ -310,20 +310,24 @@
     - not (dry_run | bool)
     - item.1.hot_removable | bool
 
-- name: Disconnect CD devices using community.vmware.vmware_guest module
-  community.vmware.vmware_guest:
-    hostname: "{{ inventory_hostname }}"
-    username: "{{ vcenter_username }}"
+- name: Disconnect CD media using VMware REST API
+  ansible.builtin.uri:
+    url: "https://{{ inventory_hostname }}/rest/vcenter/vm/{{ item.0.uuid }}/hardware/cdrom/{{ item.1.device_key }}"
+    method: PATCH
+    user: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
+    force_basic_auth: yes
     validate_certs: false
-    uuid: "{{ item.0.uuid }}"
-    state: present
-    hardware:
-      cdrom:
-        - controller_number: "{{ item.1.controller_number }}"
-          unit_number: "{{ item.1.unit_number }}"
-          type: none
-          state: present
+    body_format: json
+    body:
+      spec:
+        backing:
+          type: "NONE"
+        start_connected: false
+        allow_guest_control: true
+    headers:
+      Content-Type: "application/json"
+    status_code: [200, 204]
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
@@ -333,7 +337,7 @@
   when: 
     - not (dry_run | bool)
     - item.1.hot_removable | bool
-  register: vmware_module_results
+  register: vmware_api_results
   failed_when: false
 
 - name: Debug parsed results structure (for troubleshooting)
@@ -349,29 +353,30 @@
     - not (dry_run | bool)
     - python_disconnect_results is defined
 
-- name: Parse VMware module results
+- name: Parse VMware API results
   ansible.builtin.set_fact:
     parsed_results: []
 
-- name: Parse each VMware module result
+- name: Parse each VMware API result
   ansible.builtin.set_fact:
     parsed_results: >-
       {{
         parsed_results + [{
           'item': item.item,
-          'changed': item.changed | default(false),
-          'failed': item.failed | default(false),
-          'operation_success': not (item.failed | default(false)),
-          'error_msg': item.msg | default('') if (item.failed | default(false)) else '',
-          'result_type': 'vmware_module'
+          'changed': item.status in [200, 204],
+          'failed': item.status >= 400,
+          'operation_success': item.status in [200, 204],
+          'status_code': item.status | default(0),
+          'error_msg': item.msg | default('') if (item.status >= 400) else '',
+          'result_type': 'vmware_api'
         }]
       }}
-  loop: "{{ vmware_module_results.results | default([]) }}"
+  loop: "{{ vmware_api_results.results | default([]) }}"
   when: 
     - not (dry_run | bool)
-    - vmware_module_results is defined
+    - vmware_api_results is defined
 
-- name: Report VMware module disconnect results
+- name: Report VMware API disconnect results
   ansible.builtin.debug:
     msg: |
       ===================================================
@@ -382,17 +387,18 @@
       Media Path: {{ item.item.1.media_path | default('N/A') }}
       Hot Removable: {{ item.item.1.hot_removable | default('Unknown') }}
       Controller/Unit: {{ item.item.1.controller_number }}/{{ item.item.1.unit_number }}
+      Device Key: {{ item.item.1.device_key }}
       
       Result: {{ 'SUCCESS' if item.operation_success else 'FAILED' }}
-      Changed: {{ item.changed | default(false) }}
+      Status Code: {{ item.status_code | default('N/A') }}
       
       {% if item.failed is defined and item.failed %}
       Error Details:
       {{ item.error_msg | indent(2) }}
-      {% elif item.changed %}
-      CD/DVD media successfully disconnected!
+      {% elif item.operation_success %}
+      CD/DVD media successfully disconnected via REST API!
       {% else %}
-      No changes were needed (media may already be disconnected)
+      Operation completed but result unclear
       {% endif %}
       ===================================================
   loop: "{{ parsed_results | default([]) }}"
