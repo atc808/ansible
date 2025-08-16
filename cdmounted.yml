@@ -196,7 +196,12 @@
                   {{
                     device.connectable is defined and
                     device.connectable.connected is defined and
-                    device.connectable.connected == true
+                    (
+                      device.connectable.connected == true or
+                      (device.backing is defined and 
+                       device.backing.fileName is defined and
+                       device.backing.fileName | length > 0)
+                    )
                   }}
                 cd_device_info:
                   device_label: "{{ device.deviceInfo.label }}"
@@ -261,7 +266,12 @@
                   {{
                     device.connectable is defined and
                     device.connectable.connected is defined and
-                    device.connectable.connected == true
+                    (
+                      device.connectable.connected == true or
+                      (device.backing is defined and 
+                       device.backing.fileName is defined and
+                       device.backing.fileName | length > 0)
+                    )
                   }}
               loop: "{{ item.instance.config.hardware.device | default([]) }}"
               loop_control:
