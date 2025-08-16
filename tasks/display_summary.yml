@@ -6,7 +6,8 @@
     successful_disconnects: >-
       {{
         disconnect_results.results | default([]) |
-        selectattr('changed', 'equalto', true) |
+        selectattr('operation_success', 'defined') |
+        selectattr('operation_success', 'equalto', true) |
         list
       }}
 
@@ -23,7 +24,14 @@
       Failed VM queries: {{ failed_vm_queries | length }}
       Disconnect operations: {{ 'Enabled' if disconnect else 'Disabled' }}
       {% if not dry_run and disconnect and vms_with_cd_media | length > 0 %}
-      Successful disconnects: {{ successful_disconnects | length }}
+      {% if disconnect_results is defined %}
+      Total devices processed: {{ disconnect_results.total_processed | default(0) }}
+      Successful disconnects: {{ disconnect_results.successful_count | default(0) }}
+      Failed disconnects: {{ disconnect_results.failed_count | default(0) }}
+      Already disconnected: {{ disconnect_results.already_disconnected_count | default(0) }}
+      {% else %}
+      Disconnect results not available
+      {% endif %}
       {% endif %}
       
       {% if blacklisted_vms | length > 0 %}
