@@ -3,9 +3,10 @@
   hosts: all
   gather_facts: false
   connection: local
+  ##
   
   vars:
-    # AAP credential variables - these will be injected by AAP
+    # AAP credential variables - these will be injected by AAPf
     vcenter_username: "{{ ansible_user }}"
     vcenter_password: "{{ ansible_password }}"
     
@@ -23,7 +24,7 @@
     
   tasks:
     - name: Validate required variables
-      assert:
+      ansible.builtin.assert:
         that:
           - vcenter_username is defined and vcenter_username | length > 0
           - vcenter_password is defined and vcenter_password | length > 0
@@ -32,7 +33,7 @@
         quiet: true
 
     - name: Display operation mode
-      debug:
+      ansible.builtin.debug:
         msg: |
           ===================================================
           OPERATION MODE:
@@ -57,7 +58,7 @@
       changed_when: false
 
     - name: Validate ESXi connection
-      assert:
+      ansible.builtin.assert:
         that:
           - connection_test is not failed
           - connection_test.virtual_machines is defined
@@ -78,13 +79,13 @@
       until: vm_info is not failed
 
     - name: Initialize tracking variables
-      set_fact:
+      ansible.builtin.set_fact:
         vms_with_cd_media: []
         failed_vm_queries: []
         total_vms_found: "{{ vm_info.virtual_machines | length }}"
 
     - name: Display VM discovery summary
-      debug:
+      ansible.builtin.debug:
         msg: "Found {{ total_vms_found }} VMs on {{ inventory_hostname }}"
 
     - name: Get hardware details for each VM
@@ -109,7 +110,7 @@
           delay: 2
 
         - name: Debug raw hardware query results
-          debug:
+          ansible.builtin.debug:
             msg: |
               Raw hardware query results:
               - Query successful: {{ vm_hardware_query is not failed }}
@@ -118,15 +119,15 @@
               - Sample VM name: {{ vm_info.virtual_machines[0].guest_name if vm_info.virtual_machines | length > 0 else 'No VMs' }}
 
         - name: Pre-loop debugging
-          debug:
+          ansible.builtin.debug:
             msg: |
               About to process VM hardware results:
               - Results count: {{ vm_hardware_query.results | length }}
-              - First result has instance: {{ vm_hardware_query.results[0].instance is defined }}
-              - First result failed: {{ vm_hardware_query.results[0].failed | default(false) }}
+              - First result has instance: {{ vm_hardware_query.results[0].instance is defined if vm_hardware_query.results | length > 0 else false }}
+              - First result failed: {{ vm_hardware_query.results[0].failed | default(false) if vm_hardware_query.results | length > 0 else false }}
 
         - name: Debug hardware query results
-          debug:
+          ansible.builtin.debug:
             msg: |
               VM {{ ansible_loop.index0 }}: {{ vm_info.virtual_machines[ansible_loop.index0].guest_name }}
               Query failed: {{ item.failed is defined and item.failed }}
@@ -137,10 +138,26 @@
             extended: true
           when: ansible_loop.index0 < 3  # Only show first 3 VMs
 
+        - name: Debug why processing is skipped
+          ansible.builtin.debug:
+            msg: |
+              Checking VM processing conditions:
+              - item.failed is not defined: {{ item.failed is not defined }}
+              - item.failed value: {{ item.failed | default('undefined') }}
+              - not item.failed: {{ not item.failed if item.failed is defined else 'N/A' }}
+              - item.instance is defined: {{ item.instance is defined }}
+              - item.instance.config is defined: {{ item.instance.config is defined if item.instance is defined else 'N/A' }}
+              - item.instance.config.hardware is defined: {{ item.instance.config.hardware is defined if (item.instance is defined and item.instance.config is defined) else 'N/A' }}
+              - Overall condition result: {{ (item.failed is not defined or not item.failed) and item.instance is defined and item.instance.config is defined and item.instance.config.hardware is defined }}
+          loop: "{{ vm_hardware_query.results }}"
+          loop_control:
+            extended: true
+          when: ansible_loop.index0 < 2  # Only debug first 2 VMs
+
         - name: Process VM hardware results
           block:
             - name: Debug VM hardware structure
-              debug:
+              ansible.builtin.debug:
                 msg: |
                   VM: {{ vm_info.virtual_machines[ansible_loop.index0].guest_name }}
                   Query failed: {{ item.failed is defined and item.failed }}
@@ -152,11 +169,11 @@
               when: ansible_loop.index0 < 3  # Only show first 3 VMs
 
             - name: Initialize CD devices list for current VM
-              set_fact:
+              ansible.builtin.set_fact:
                 current_vm_cd_devices: []
 
             - name: Debug device types for first VM (unconditional)
-              debug:
+              ansible.builtin.debug:
                 msg: |
                   Device {{ device_index }}: 
                   - Label: '{{ device.deviceInfo.label | default("No label") }}'
@@ -177,7 +194,7 @@
                 - item.instance.config.hardware is defined
 
             - name: Process each device to find CD/DVD devices
-              set_fact:
+              ansible.builtin.set_fact:
                 current_vm_cd_devices: "{{ current_vm_cd_devices + [cd_device_info] }}"
               vars:
                 device_key_int: "{{ device.key | default(0) | int }}"
@@ -242,7 +259,7 @@
                 - is_connected | bool
 
             - name: Debug CD device detection for first VM
-              debug:
+              ansible.builtin.debug:
                 msg: |
                   Checking device: {{ device.deviceInfo.label | default('No label') }}
                   Is CD device: {{ is_cd_device }}
@@ -281,7 +298,7 @@
                 - is_cd_device | bool  # Only show potential CD devices
 
             - name: Add VM to results if it has connected CD devices
-              set_fact:
+              ansible.builtin.set_fact:
                 vms_with_cd_media: >-
                   {{
                     vms_with_cd_media + [{
@@ -299,9 +316,12 @@
             - item.instance is defined
             - item.instance.config is defined
             - item.instance.config.hardware is defined
+          loop: "{{ vm_hardware_query.results }}"
+          loop_control:
+            extended: true
 
         - name: Record failed VM query
-          set_fact:
+          ansible.builtin.set_fact:
             failed_vm_queries: >-
               {{
                 failed_vm_queries + [{
@@ -311,9 +331,12 @@
                 }]
               }}
           when: item.failed is defined and item.failed
+          loop: "{{ vm_hardware_query.results }}"
+          loop_control:
+            extended: true
 
     - name: Display VMs with connected CD devices
-      debug:
+      ansible.builtin.debug:
         msg: |
           ===================================================
           VM WITH CD MEDIA FOUND:
@@ -338,7 +361,7 @@
     - name: Perform CD device disconnections
       block:
         - name: Filter VMs for disconnect operations
-          set_fact:
+          ansible.builtin.set_fact:
             vms_eligible_for_disconnect: >-
               {{
                 vms_with_cd_media |
@@ -348,7 +371,7 @@
               }}
 
         - name: Display dry-run information
-          debug:
+          ansible.builtin.debug:
             msg: |
               ===================================================
               DRY RUN MODE - NO CHANGES WILL BE MADE
@@ -405,7 +428,7 @@
           delay: 3
 
         - name: Report devices requiring manual intervention
-          debug:
+          ansible.builtin.debug:
             msg: |
               ===================================================
               MANUAL INTERVENTION REQUIRED:
@@ -431,7 +454,7 @@
         - vms_with_cd_media | length > 0
 
     - name: Display operation summary
-      debug:
+      ansible.builtin.debug:
         msg: |
           ===================================================
           OPERATION SUMMARY for {{ inventory_hostname }}:
@@ -448,7 +471,7 @@
           ===================================================
 
     - name: Report any failed operations
-      debug:
+      ansible.builtin.debug:
         msg: |
           ===================================================
           FAILED OPERATIONS:
@@ -459,4 +482,3 @@
           {% endfor %}
           ===================================================
       when: failed_vm_queries | length > 0
-
