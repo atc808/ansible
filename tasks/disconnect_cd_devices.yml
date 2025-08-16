@@ -186,7 +186,7 @@
                   return result
               
               result['device_found'] = True
-              result['message'] += f'Found CD/DVD device: {device.deviceInfo.label}\n'
+              result['message'] += f'Found CD/DVD device: {cd_device.deviceInfo.label}\n'
               
               # Check if media is currently connected
               has_media = False
@@ -216,11 +216,14 @@
               device_change.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
               device_change.device = cd_device
               
-              # Set to no media
+              # Set to no media - create new backing without media
               device_change.device.backing = vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo()
-              device_change.device.connectable = vim.vm.device.VirtualDevice.ConnectableDevice()
-              device_change.device.connectable.connected = False
-              device_change.device.connectable.startConnected = False
+              
+              # Create new connectable device configuration
+              connectable = vim.vm.device.VirtualDevice.ConnectableDevice()
+              connectable.connected = False
+              connectable.startConnected = False
+              device_change.device.connectable = connectable
               
               # Create VM config spec
               config_spec = vim.vm.ConfigSpec()
