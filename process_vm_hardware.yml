@@ -1,3 +1,4 @@
+
 ---
 # Process VM hardware to find CD devices
 - name: Record failed VM query

@@ -87,6 +87,15 @@
       debug:
         msg: "Found {{ total_vms_found }} VMs on {{ inventory_hostname }}"
 
+    - name: Debug hardware query results summary
+      debug:
+        msg: |
+          Hardware query completed:
+          - Total results: {{ vm_hardware_query.results | length }}
+          - Results structure: {{ vm_hardware_query.results | map(attribute='keys') | list if vm_hardware_query.results | length > 0 else 'No results' }}
+          - First result failed: {{ vm_hardware_query.results[0].failed | default('undefined') if vm_hardware_query.results | length > 0 else 'N/A' }}
+          - First result has instance: {{ vm_hardware_query.results[0].instance is defined if vm_hardware_query.results | length > 0 else 'N/A' }}
+
     - name: Get hardware details for each VM
       block:
         - name: Query VM hardware information
@@ -107,6 +116,24 @@
           failed_when: false
           retries: 2
           delay: 2
+
+        - name: Debug raw hardware query results
+          debug:
+            msg: |
+              Raw hardware query results:
+              - Query successful: {{ vm_hardware_query is not failed }}
+              - Number of results: {{ vm_hardware_query.results | length }}
+              - Sample result keys: {{ vm_hardware_query.results[0].keys() | list if vm_hardware_query.results | length > 0 else 'No results' }}
+              - Sample VM name: {{ vm_info.virtual_machines[0].guest_name if vm_info.virtual_machines | length > 0 else 'No VMs' }}
+
+        - name: Pre-loop debugging
+          debug:
+            msg: |
+              About to process VM hardware results:
+              - vm_hardware_query defined: {{ vm_hardware_query is defined }}
+              - vm_hardware_query.results defined: {{ vm_hardware_query.results is defined if vm_hardware_query is defined else 'N/A' }}
+              - Results count: {{ vm_hardware_query.results | length if vm_hardware_query.results is defined else 'N/A' }}
+              - Will process: {{ vm_hardware_query.results | length > 0 if vm_hardware_query.results is defined else 'N/A' }}
 
         - name: Debug hardware query results
           debug:
