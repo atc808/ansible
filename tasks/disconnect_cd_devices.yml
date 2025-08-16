@@ -310,15 +310,20 @@
     - not (dry_run | bool)
     - item.1.hot_removable | bool
 
-- name: Disconnect CD devices using Python PyVmomi script
-  ansible.builtin.command:
-    cmd: >
-      python3 /tmp/disconnect_cd_media.py
-      "{{ inventory_hostname }}"
-      "{{ vcenter_username }}"
-      "{{ vcenter_password }}"
-      "{{ item.0.uuid }}"
-      "{{ item.1.device_key }}"
+- name: Disconnect CD devices using community.vmware.vmware_guest module
+  community.vmware.vmware_guest:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    uuid: "{{ item.0.uuid }}"
+    state: present
+    hardware:
+      cdrom:
+        - controller_number: "{{ item.1.controller_number }}"
+          unit_number: "{{ item.1.unit_number }}"
+          type: none
+          state: present
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
@@ -328,10 +333,8 @@
   when: 
     - not (dry_run | bool)
     - item.1.hot_removable | bool
-  register: python_disconnect_results
+  register: vmware_module_results
   failed_when: false
-  vars:
-    ansible_command_timeout: 120
 
 - name: Debug parsed results structure (for troubleshooting)
   ansible.builtin.debug:
@@ -346,30 +349,29 @@
     - not (dry_run | bool)
     - python_disconnect_results is defined
 
-- name: Parse Python script results with error handling
+- name: Parse VMware module results
   ansible.builtin.set_fact:
     parsed_results: []
 
-- name: Parse each result individually
+- name: Parse each VMware module result
   ansible.builtin.set_fact:
     parsed_results: >-
       {{
         parsed_results + [{
           'item': item.item,
-          'rc': item.rc | default(-1),
-          'stdout': item.stdout | default(''),
-          'stderr': item.stderr | default(''),
-          'operation_success': (item.rc | default(1)) == 0,
-          'parsed_output': (item.stdout | default('{}') | from_json) if (item.stdout | default('') | length > 0) else {}
+          'changed': item.changed | default(false),
+          'failed': item.failed | default(false),
+          'operation_success': not (item.failed | default(false)),
+          'error_msg': item.msg | default('') if (item.failed | default(false)) else '',
+          'result_type': 'vmware_module'
         }]
       }}
-  loop: "{{ python_disconnect_results.results | default([]) }}"
+  loop: "{{ vmware_module_results.results | default([]) }}"
   when: 
     - not (dry_run | bool)
-    - python_disconnect_results is defined
-  failed_when: false
+    - vmware_module_results is defined
 
-- name: Report Python disconnect results
+- name: Report VMware module disconnect results
   ansible.builtin.debug:
     msg: |
       ===================================================
@@ -379,29 +381,18 @@
       Device: {{ item.item.1.device_label | default('Unknown Device') }}
       Media Path: {{ item.item.1.media_path | default('N/A') }}
       Hot Removable: {{ item.item.1.hot_removable | default('Unknown') }}
-      Return Code: {{ item.rc | default('N/A') }}
-      Operation Success: {{ item.operation_success | default(false) }}
+      Controller/Unit: {{ item.item.1.controller_number }}/{{ item.item.1.unit_number }}
       
-      {% if item.parsed_output is defined %}
-      VM Found: {{ item.parsed_output.vm_found | default('Unknown') }}
-      Device Found: {{ item.parsed_output.device_found | default('Unknown') }}
-      Media Was Connected: {{ item.parsed_output.media_was_connected | default('Unknown') }}
+      Result: {{ 'SUCCESS' if item.operation_success else 'FAILED' }}
+      Changed: {{ item.changed | default(false) }}
       
-      Result Details:
-      {{ item.parsed_output.message | default('No message') | indent(2) }}
-      
-      {% if item.parsed_output.error is defined and item.parsed_output.error | length > 0 %}
+      {% if item.failed is defined and item.failed %}
       Error Details:
-      {{ item.parsed_output.error | indent(2) }}
-      {% endif %}
+      {{ item.error_msg | indent(2) }}
+      {% elif item.changed %}
+      CD/DVD media successfully disconnected!
       {% else %}
-      Raw Output:
-      {{ item.stdout | default('No output available') | indent(2) }}
-      {% if item.stderr is defined and item.stderr | length > 0 %}
-      
-      Errors:
-      {{ item.stderr | indent(2) }}
-      {% endif %}
+      No changes were needed (media may already be disconnected)
       {% endif %}
       ===================================================
   loop: "{{ parsed_results | default([]) }}"
@@ -440,6 +431,7 @@
         parsed_results | default([]) |
         selectattr('operation_success', 'defined') |
         selectattr('operation_success', 'equalto', true) |
+        selectattr('changed', 'equalto', true) |
         list
       }}
     failed_disconnects: >-
@@ -449,12 +441,12 @@
         selectattr('operation_success', 'equalto', false) |
         list
       }}
-    already_disconnected: >-
+    no_change_needed: >-
       {{
         parsed_results | default([]) |
-        selectattr('parsed_output', 'defined') |
-        selectattr('parsed_output.media_was_connected', 'defined') |
-        selectattr('parsed_output.media_was_connected', 'equalto', false) |
+        selectattr('operation_success', 'defined') |
+        selectattr('operation_success', 'equalto', true) |
+        selectattr('changed', 'equalto', false) |
         list
       }}
 
@@ -464,7 +456,7 @@
       results: "{{ parsed_results | default([]) }}"
       successful_count: "{{ successful_disconnects | default([]) | length }}"
       failed_count: "{{ failed_disconnects | default([]) | length }}"
-      already_disconnected_count: "{{ already_disconnected | default([]) | length }}"
+      no_change_count: "{{ no_change_needed | default([]) | length }}"
       total_processed: "{{ parsed_results | default([]) | length }}"
   when: parsed_results is defined
 
@@ -476,17 +468,10 @@
       ===================================================
       Total devices processed: {{ disconnect_results.total_processed | default(0) }}
       Successful disconnections: {{ disconnect_results.successful_count | default(0) }}
-      Already disconnected: {{ disconnect_results.already_disconnected_count | default(0) }}
+      No changes needed: {{ disconnect_results.no_change_count | default(0) }}
       Failed operations: {{ disconnect_results.failed_count | default(0) }}
       Manual intervention required: {{ manual_intervention_devices | length }}
       ===================================================
   when: 
     - not (dry_run | bool)
     - disconnect_results is defined
-
-- name: Clean up temporary Python script
-  ansible.builtin.file:
-    path: /tmp/disconnect_cd_media.py
-    state: absent
-  delegate_to: localhost
-  run_once: true
