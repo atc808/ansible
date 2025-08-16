@@ -249,7 +249,7 @@
       
       Output:
       {{ item.stdout | default('No output') | indent(2) }}
-      {% if item.stderr and item.stderr | length > 0 %}
+      {% if item.stderr is defined and item.stderr | length > 0 %}
       
       Errors:
       {{ item.stderr | indent(2) }}
