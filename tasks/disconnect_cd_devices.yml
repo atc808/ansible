@@ -326,7 +326,7 @@
   run_once: true
   when: 
     - not (dry_run | bool)
-    - vms_eligible_for_disconnect | selectattr('cd_devices', 'selectattr', 'hot_removable', 'equalto', true) | list | length > 0
+    - hot_removable_devices | length > 0
 
 - name: Disconnect CD media using VMware REST API
   ansible.builtin.uri:
