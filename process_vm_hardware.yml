@@ -1,3 +1,5 @@
+---
+# Separate task file: process_vm_hardware.yml
 - name: Record failed VM query
   set_fact:
     failed_vm_queries: >-
@@ -93,4 +95,4 @@
     - vm_hardware is not failed
     - vm_hardware.instance is defined
     - vm_hardware.instance.config is defined
-    - vm_hardware.instance.config.hardware is de
+    - vm_hardware.instance.config.hardware is definedfined
