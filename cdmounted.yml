@@ -87,15 +87,6 @@
       debug:
         msg: "Found {{ total_vms_found }} VMs on {{ inventory_hostname }}"
 
-    - name: Debug hardware query results summary
-      debug:
-        msg: |
-          Hardware query completed:
-          - Total results: {{ vm_hardware_query.results | length }}
-          - Results structure: {{ vm_hardware_query.results | map(attribute='keys') | list if vm_hardware_query.results | length > 0 else 'No results' }}
-          - First result failed: {{ vm_hardware_query.results[0].failed | default('undefined') if vm_hardware_query.results | length > 0 else 'N/A' }}
-          - First result has instance: {{ vm_hardware_query.results[0].instance is defined if vm_hardware_query.results | length > 0 else 'N/A' }}
-
     - name: Get hardware details for each VM
       block:
         - name: Query VM hardware information
@@ -459,3 +450,4 @@
           {% endfor %}
           ===================================================
       when: failed_vm_queries | length > 0
+
