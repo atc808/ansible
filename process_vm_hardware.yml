@@ -95,4 +95,4 @@
     - vm_hardware is not failed
     - vm_hardware.instance is defined
     - vm_hardware.instance.config is defined
-    - vm_hardware.instance.config.hardware is definedfined
+    - vm_hardware.instance.config.hardware is defined
