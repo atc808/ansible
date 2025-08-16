@@ -187,7 +187,7 @@
               when: current_vm_cd_devices | length > 0
 
           when: 
-            - item is not failed
+            - item.failed is not defined or not item.failed
             - item.instance is defined
             - item.instance.config is defined
             - item.instance.config.hardware is defined
@@ -202,7 +202,7 @@
                   'error': item.msg | default('Hardware query failed')
                 }]
               }}
-          when: item is failed
+          when: item.failed is defined and item.failed
 
     - name: Display VMs with connected CD devices
       debug:
