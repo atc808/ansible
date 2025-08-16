@@ -55,7 +55,7 @@
       ===================================================
   when: dry_run | bool
 
-- name: Disconnect hot-removable CD devices (forceful removal)
+- name: Disconnect hot-removable CD devices (via host device method)
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
     username: "{{ vcenter_username }}"
@@ -65,7 +65,8 @@
     cdrom:
       - controller_number: "{{ item.1.controller_number }}"
         unit_number: "{{ item.1.unit_number }}"
-        state: absent
+        state: present
+        type: client
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
