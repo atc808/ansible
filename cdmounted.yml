@@ -6,8 +6,8 @@
   
   vars:
     # AAP credential variables - these will be injected by AAP
-    vcenter_username: "root"
-    vcenter_password: "Citl0ml!"
+    vcenter_username: "{{ ansible_user }}"
+    vcenter_password: "{{ ansible_password }}"
     
     # Control variables
     disconnect: true
