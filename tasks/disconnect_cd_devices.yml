@@ -55,172 +55,174 @@
       ===================================================
   when: dry_run | bool
 
-- name: Disconnect CD devices using enhanced PowerCLI with comprehensive dialog suppression
-  ansible.builtin.shell: |
-    pwsh -NoProfile -NonInteractive -Command "
-    # Set all preference variables to suppress output and prompts
-    \$ErrorActionPreference = 'Continue'
-    \$WarningPreference = 'SilentlyContinue'
-    \$InformationPreference = 'SilentlyContinue'
-    \$VerbosePreference = 'SilentlyContinue'
-    \$DebugPreference = 'SilentlyContinue'
-    \$ProgressPreference = 'SilentlyContinue'
-    
-    # Suppress PowerShell startup banner and set culture
-    [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'
-    
-    try {
-      # Import PowerCLI modules with suppressed output
-      Import-Module VMware.PowerCLI -Force -Scope Local -ErrorAction SilentlyContinue | Out-Null
-      
-      # Comprehensive PowerCLI configuration to suppress ALL dialogs
-      \$null = Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -ParticipateInCEIP \$false -Confirm:\$false -Scope Session -DefaultVIServerMode Single -WebOperationTimeoutSeconds 300 -DisplayDeprecationWarnings \$false -ErrorAction SilentlyContinue
-      
-      # Additional configuration for specific scenarios
-      \$null = Set-PowerCLIConfiguration -ProxyPolicy UseSystemProxy -Confirm:\$false -Scope Session -ErrorAction SilentlyContinue
-      
-      Write-Output \"INFO: Connecting to ESXi host {{ inventory_hostname }}\"
-      
-      # Connect to ESXi with timeout and retry logic
-      \$connectParams = @{
-        Server = '{{ inventory_hostname }}'
-        User = '{{ vcenter_username }}'
-        Password = '{{ vcenter_password }}'
-        Force = \$true
-        ErrorAction = 'Stop'
-      }
-      
-      \$connection = Connect-VIServer @connectParams
-      
-      if (-not \$connection) {
-        Write-Output 'ERROR: Failed to establish connection to ESXi host'
-        exit 1
-      }
-      
-      Write-Output \"INFO: Successfully connected to {{ inventory_hostname }}\"
-      
-      # Find VM by UUID with better error handling
-      \$vm = Get-VM -ErrorAction SilentlyContinue | Where-Object { 
-        \$_.ExtensionData.Config.Uuid -eq '{{ item.0.uuid }}' 
-      }
-      
-      if (-not \$vm) {
-        Write-Output 'ERROR: VM not found with UUID {{ item.0.uuid }}'
-        exit 1
-      }
-      
-      Write-Output \"INFO: Found VM: \$(\$vm.Name)\"
-      
-      # Get all CD/DVD drives and find the specific one
-      \$allCDDrives = \$vm | Get-CDDrive -ErrorAction SilentlyContinue
-      
-      if (-not \$allCDDrives) {
-        Write-Output 'WARNING: No CD/DVD drives found on this VM'
-        exit 0
-      }
-      
-      \$cdrom = \$allCDDrives | Where-Object { \$_.ExtensionData.Key -eq {{ item.1.device_key }} }
-      
-      if (-not \$cdrom) {
-        Write-Output 'ERROR: CD/DVD drive not found with device key {{ item.1.device_key }}'
-        Write-Output \"Available CD/DVD drives: \$(\$allCDDrives | ForEach-Object { \$_.ExtensionData.Key })\"
-        exit 1
-      }
-      
-      Write-Output \"INFO: Found CD/DVD drive: \$(\$cdrom.Name) (Key: \$(\$cdrom.ExtensionData.Key))\"
-      
-      # Check current media state with detailed information
-      \$hasIsoMedia = \$cdrom.IsoPath -ne \$null -and \$cdrom.IsoPath -ne ''
-      \$hasHostDevice = \$cdrom.HostDevice -ne \$null -and \$cdrom.HostDevice -ne ''
-      \$isConnected = \$cdrom.ExtensionData.Connectable.Connected
-      
-      Write-Output \"INFO: Current state - ISO: \$hasIsoMedia, HostDevice: \$hasHostDevice, Connected: \$isConnected\"
-      
-      if (-not (\$hasIsoMedia -or \$hasHostDevice -or \$isConnected)) {
-        Write-Output 'INFO: CD/DVD drive already has no media connected'
-        exit 0
-      }
-      
-      # Display what we're disconnecting
-      if (\$hasIsoMedia) {
-        Write-Output \"INFO: Disconnecting ISO file: \$(\$cdrom.IsoPath)\"
-      }
-      if (\$hasHostDevice) {
-        Write-Output \"INFO: Disconnecting host device: \$(\$cdrom.HostDevice)\"
-      }
-      
-      # Attempt to disconnect media with retry logic
-      Write-Output \"INFO: Attempting to disconnect media from \$(\$cdrom.Name)\"
-      
-      \$maxRetries = 3
-      \$retryCount = 0
-      \$success = \$false
-      
-      while (\$retryCount -lt \$maxRetries -and -not \$success) {
-        try {
-          \$retryCount++
-          Write-Output \"INFO: Disconnect attempt \$retryCount of \$maxRetries\"
-          
-          # Use Set-CDDrive with no media
-          \$result = Set-CDDrive -CD \$cdrom -NoMedia -Confirm:\$false -ErrorAction Stop
-          
-          # Verify the disconnection
-          \$cdrom = \$vm | Get-CDDrive | Where-Object { \$_.ExtensionData.Key -eq {{ item.1.device_key }} }
-          \$stillConnected = (\$cdrom.IsoPath -ne \$null -and \$cdrom.IsoPath -ne '') -or (\$cdrom.HostDevice -ne \$null -and \$cdrom.HostDevice -ne '')
-          
-          if (-not \$stillConnected) {
-            Write-Output 'SUCCESS: Successfully disconnected CD/DVD media'
-            \$success = \$true
-          } else {
-            Write-Output 'WARNING: Command executed but media may still be connected'
+- name: Create Python script for CD media disconnection
+  ansible.builtin.copy:
+    content: |
+      #!/usr/bin/env python3
+      """
+      VMware CD/DVD Media Disconnect Script
+      Uses PyVmomi to disconnect CD media without confirmation dialogs
+      """
+      import sys
+      import ssl
+      import json
+      from pyVim.connect import SmartConnect, Disconnect
+      from pyVmomi import vim
+      import atexit
+
+      def disconnect_cd_media(host, username, password, vm_uuid, device_key):
+          """
+          Disconnect CD/DVD media from a specific VM device
+          """
+          result = {
+              'success': False,
+              'message': '',
+              'error': '',
+              'vm_found': False,
+              'device_found': False,
+              'media_was_connected': False
           }
           
-        }
-        catch [VMware.VimAutomation.ViCore.Types.V1.ErrorHandling.InvalidDeviceOperation] {
-          Write-Output 'WARNING: Device operation not supported while VM is running. VM may need to be powered off.'
-          break
-        }
-        catch [VMware.VimAutomation.ViCore.Types.V1.ErrorHandling.InvalidState] {
-          Write-Output 'WARNING: Device is in invalid state. May require manual intervention via vSphere Client.'
-          break
-        }
-        catch [System.Exception] {
-          \$errorMsg = \$_.Exception.Message
-          Write-Output \"WARNING: Attempt \$retryCount failed: \$errorMsg\"
+          try:
+              # Create SSL context that ignores certificate errors
+              context = ssl.create_default_context()
+              context.check_hostname = False
+              context.verify_mode = ssl.CERT_NONE
+              
+              # Connect to vCenter/ESXi
+              si = SmartConnect(
+                  host=host,
+                  user=username,
+                  pwd=password,
+                  sslContext=context
+              )
+              
+              # Ensure we disconnect on exit
+              atexit.register(Disconnect, si)
+              
+              # Get the content object
+              content = si.RetrieveContent()
+              
+              # Find VM by UUID
+              vm = None
+              container = content.viewManager.CreateContainerView(
+                  content.rootFolder, [vim.VirtualMachine], True
+              )
+              
+              for managed_object in container.view:
+                  if managed_object.config.uuid == vm_uuid:
+                      vm = managed_object
+                      break
+              
+              container.Destroy()
+              
+              if not vm:
+                  result['error'] = f'VM not found with UUID: {vm_uuid}'
+                  return result
+              
+              result['vm_found'] = True
+              result['message'] += f'Found VM: {vm.name}\n'
+              
+              # Find the CD/DVD device
+              cd_device = None
+              for device in vm.config.hardware.device:
+                  if hasattr(device, 'key') and device.key == int(device_key):
+                      if isinstance(device, vim.vm.device.VirtualCdrom):
+                          cd_device = device
+                          break
+              
+              if not cd_device:
+                  result['error'] = f'CD/DVD device not found with key: {device_key}'
+                  return result
+              
+              result['device_found'] = True
+              result['message'] += f'Found CD/DVD device: {device.deviceInfo.label}\n'
+              
+              # Check if media is currently connected
+              has_media = False
+              if hasattr(cd_device, 'backing'):
+                  if isinstance(cd_device.backing, vim.vm.device.VirtualCdrom.IsoBackingInfo):
+                      if cd_device.backing.fileName:
+                          has_media = True
+                          result['message'] += f'Current ISO: {cd_device.backing.fileName}\n'
+                  elif isinstance(cd_device.backing, vim.vm.device.VirtualCdrom.AtapiBackingInfo):
+                      if cd_device.backing.deviceName:
+                          has_media = True
+                          result['message'] += f'Current device: {cd_device.backing.deviceName}\n'
+              
+              if cd_device.connectable and cd_device.connectable.connected:
+                  has_media = True
+                  result['message'] += 'Device is currently connected\n'
+              
+              result['media_was_connected'] = has_media
+              
+              if not has_media:
+                  result['success'] = True
+                  result['message'] += 'No media was connected - nothing to disconnect'
+                  return result
+              
+              # Create device change spec to disconnect media
+              device_change = vim.vm.device.VirtualDeviceSpec()
+              device_change.operation = vim.vm.device.VirtualDeviceSpec.Operation.edit
+              device_change.device = cd_device
+              
+              # Set to no media
+              device_change.device.backing = vim.vm.device.VirtualCdrom.RemotePassthroughBackingInfo()
+              device_change.device.connectable = vim.vm.device.VirtualDevice.ConnectableDevice()
+              device_change.device.connectable.connected = False
+              device_change.device.connectable.startConnected = False
+              
+              # Create VM config spec
+              config_spec = vim.vm.ConfigSpec()
+              config_spec.deviceChange = [device_change]
+              
+              # Apply the configuration
+              task = vm.ReconfigVM_Task(config_spec)
+              
+              # Wait for task completion
+              while task.info.state in [vim.TaskInfo.State.running, vim.TaskInfo.State.queued]:
+                  pass
+              
+              if task.info.state == vim.TaskInfo.State.success:
+                  result['success'] = True
+                  result['message'] += 'Successfully disconnected CD/DVD media'
+              else:
+                  result['error'] = f'Task failed: {task.info.error.localizedMessage if task.info.error else "Unknown error"}'
+              
+          except Exception as e:
+              result['error'] = f'Exception occurred: {str(e)}'
           
-          if (\$errorMsg -match 'locked|busy|in use|cannot complete') {
-            Write-Output 'WARNING: Device appears to be locked or in use by another process'
-            if (\$retryCount -lt \$maxRetries) {
-              Write-Output 'INFO: Waiting 2 seconds before retry...'
-              Start-Sleep -Seconds 2
-            }
-          } else {
-            Write-Output \"ERROR: Unexpected error: \$errorMsg\"
-            break
-          }
-        }
-      }
-      
-      if (-not \$success -and \$retryCount -ge \$maxRetries) {
-        Write-Output 'ERROR: Failed to disconnect media after all retry attempts'
-      }
-      
-    }
-    catch [System.Exception] {
-      Write-Output \"ERROR: Script execution failed: \$(\$_.Exception.Message)\"
-    }
-    finally {
-      # Always disconnect from vCenter/ESXi
-      if (\$connection) {
-        try {
-          Write-Output 'INFO: Disconnecting from ESXi host'
-          Disconnect-VIServer -Server \$connection -Confirm:\$false -Force -ErrorAction SilentlyContinue
-        } catch {
-          # Ignore disconnect errors
-        }
-      }
-    }
-    "
+          return result
+
+      if __name__ == '__main__':
+          if len(sys.argv) != 6:
+              print('Usage: script.py <host> <username> <password> <vm_uuid> <device_key>')
+              sys.exit(1)
+          
+          host = sys.argv[1]
+          username = sys.argv[2] 
+          password = sys.argv[3]
+          vm_uuid = sys.argv[4]
+          device_key = sys.argv[5]
+          
+          result = disconnect_cd_media(host, username, password, vm_uuid, device_key)
+          print(json.dumps(result, indent=2))
+          
+          sys.exit(0 if result['success'] else 1)
+    dest: /tmp/disconnect_cd_media.py
+    mode: '0755'
+  delegate_to: localhost
+  run_once: true
+
+- name: Disconnect CD devices using Python PyVmomi script
+  ansible.builtin.command:
+    cmd: >
+      python3 /tmp/disconnect_cd_media.py
+      "{{ inventory_hostname }}"
+      "{{ vcenter_username }}"
+      "{{ vcenter_password }}"
+      "{{ item.0.uuid }}"
+      "{{ item.1.device_key }}"
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
@@ -230,23 +232,27 @@
   when: 
     - not (dry_run | bool)
     - item.1.hot_removable | bool
-  register: powercli_disconnect_results
+  register: python_disconnect_results
   failed_when: false
   vars:
-    ansible_command_timeout: 300
+    ansible_command_timeout: 120
 
-- name: Debug PowerCLI results structure (for troubleshooting)
-  ansible.builtin.debug:
-    msg: |
-      PowerCLI Results Debug:
-      - Results defined: {{ powercli_disconnect_results is defined }}
-      - Results structure: {{ powercli_disconnect_results | default('Not defined') }}
-      - Number of results: {{ powercli_disconnect_results.results | default([]) | length }}
+- name: Parse Python script results
+  ansible.builtin.set_fact:
+    parsed_results: >-
+      {{
+        python_disconnect_results.results | default([]) |
+        map('combine', {
+          'parsed_output': (item.stdout | default('{}') | from_json),
+          'operation_success': (item.rc | default(1)) == 0
+        }) |
+        list
+      }}
   when: 
     - not (dry_run | bool)
-    - powercli_disconnect_results is defined
+    - python_disconnect_results is defined
 
-- name: Report PowerCLI disconnect results
+- name: Report Python disconnect results
   ansible.builtin.debug:
     msg: |
       ===================================================
@@ -257,20 +263,34 @@
       Media Path: {{ item.item.1.media_path | default('N/A') }}
       Hot Removable: {{ item.item.1.hot_removable | default('Unknown') }}
       Return Code: {{ item.rc | default('N/A') }}
+      Operation Success: {{ item.operation_success | default(false) }}
       
-      Output:
+      {% if item.parsed_output is defined %}
+      VM Found: {{ item.parsed_output.vm_found | default('Unknown') }}
+      Device Found: {{ item.parsed_output.device_found | default('Unknown') }}
+      Media Was Connected: {{ item.parsed_output.media_was_connected | default('Unknown') }}
+      
+      Result Details:
+      {{ item.parsed_output.message | default('No message') | indent(2) }}
+      
+      {% if item.parsed_output.error and item.parsed_output.error | length > 0 %}
+      Error Details:
+      {{ item.parsed_output.error | indent(2) }}
+      {% endif %}
+      {% else %}
+      Raw Output:
       {{ item.stdout | default('No output available') | indent(2) }}
       {% if item.stderr is defined and item.stderr | length > 0 %}
       
       Errors:
       {{ item.stderr | indent(2) }}
       {% endif %}
+      {% endif %}
       ===================================================
-  loop: "{{ powercli_disconnect_results.results | default([]) }}"
+  loop: "{{ parsed_results | default([]) }}"
   when: 
     - not (dry_run | bool)
-    - powercli_disconnect_results is defined
-    - powercli_disconnect_results.results is defined
+    - parsed_results is defined
 
 - name: Report devices requiring manual intervention
   ansible.builtin.debug:
@@ -300,45 +320,33 @@
   ansible.builtin.set_fact:
     successful_disconnects: >-
       {{
-        powercli_disconnect_results.results | default([]) |
-        selectattr('stdout', 'defined') |
-        selectattr('stdout', 'search', 'SUCCESS') |
+        parsed_results | default([]) |
+        selectattr('operation_success', 'equalto', true) |
         list
       }}
     failed_disconnects: >-
       {{
-        powercli_disconnect_results.results | default([]) |
-        selectattr('stdout', 'defined') |
-        selectattr('stdout', 'search', 'ERROR') |
+        parsed_results | default([]) |
+        selectattr('operation_success', 'equalto', false) |
         list
       }}
-    warning_disconnects: >-
+    already_disconnected: >-
       {{
-        powercli_disconnect_results.results | default([]) |
-        selectattr('stdout', 'defined') |
-        selectattr('stdout', 'search', 'WARNING') |
-        list
-      }}
-    info_disconnects: >-
-      {{
-        powercli_disconnect_results.results | default([]) |
-        selectattr('stdout', 'defined') |
-        selectattr('stdout', 'search', 'INFO: CD/DVD drive already has no media') |
+        parsed_results | default([]) |
+        selectattr('parsed_output.media_was_connected', 'defined') |
+        selectattr('parsed_output.media_was_connected', 'equalto', false) |
         list
       }}
 
 - name: Update disconnect results for summary reporting
   ansible.builtin.set_fact:
     disconnect_results:
-      results: "{{ powercli_disconnect_results.results | default([]) }}"
+      results: "{{ parsed_results | default([]) }}"
       successful_count: "{{ successful_disconnects | default([]) | length }}"
       failed_count: "{{ failed_disconnects | default([]) | length }}"
-      warning_count: "{{ warning_disconnects | default([]) | length }}"
-      already_disconnected_count: "{{ info_disconnects | default([]) | length }}"
-      total_processed: "{{ powercli_disconnect_results.results | default([]) | length }}"
-  when: 
-    - powercli_disconnect_results is defined
-    - successful_disconnects is defined
+      already_disconnected_count: "{{ already_disconnected | default([]) | length }}"
+      total_processed: "{{ parsed_results | default([]) | length }}"
+  when: parsed_results is defined
 
 - name: Display disconnect operation summary
   ansible.builtin.debug:
@@ -349,10 +357,16 @@
       Total devices processed: {{ disconnect_results.total_processed | default(0) }}
       Successful disconnections: {{ disconnect_results.successful_count | default(0) }}
       Already disconnected: {{ disconnect_results.already_disconnected_count | default(0) }}
-      Warnings (may need manual intervention): {{ disconnect_results.warning_count | default(0) }}
-      Errors: {{ disconnect_results.failed_count | default(0) }}
+      Failed operations: {{ disconnect_results.failed_count | default(0) }}
       Manual intervention required: {{ manual_intervention_devices | length }}
       ===================================================
   when: 
     - not (dry_run | bool)
     - disconnect_results is defined
+
+- name: Clean up temporary Python script
+  ansible.builtin.file:
+    path: /tmp/disconnect_cd_media.py
+    state: absent
+  delegate_to: localhost
+  run_once: true
