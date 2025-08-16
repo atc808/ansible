@@ -55,18 +55,36 @@
       ===================================================
   when: dry_run | bool
 
-- name: Disconnect hot-removable CD devices (via host device method)
-  community.vmware.vmware_guest:
-    hostname: "{{ inventory_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    validate_certs: false
-    uuid: "{{ item.0.uuid }}"
-    cdrom:
-      - controller_number: "{{ item.1.controller_number }}"
-        unit_number: "{{ item.1.unit_number }}"
-        state: present
-        type: client
+- name: Disconnect CD devices using PowerCLI (handles dialogs)
+  ansible.builtin.shell: |
+    pwsh -Command "
+    Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:\$false -Scope Session
+    Connect-VIServer -Server {{ inventory_hostname }} -User {{ vcenter_username }} -Password '{{ vcenter_password }}' | Out-Null
+    \$vm = Get-VM | Where-Object {(\$_.ExtensionData.Config.Uuid) -eq '{{ item.0.uuid }}'}
+    \$cdrom = \$vm | Get-CDDrive | Where-Object {(\$_.ExtensionData.Key) -eq {{ item.1.device_key }}}
+    if (\$cdrom) {
+      try {
+        Set-CDDrive -CD \$cdrom -NoMedia -Confirm:\$false -ErrorAction Stop
+        Write-Output 'SUCCESS: Disconnected CD drive'
+      } catch {
+        if (\$_.Exception.Message -like '*locked*') {
+          # Force disconnect even if locked
+          \$spec = New-Object VMware.Vim.VirtualMachineConfigSpec
+          \$deviceSpec = New-Object VMware.Vim.VirtualDeviceConfigSpec
+          \$deviceSpec.Operation = [VMware.Vim.VirtualDeviceConfigSpecOperation]::edit
+          \$deviceSpec.Device = \$cdrom.ExtensionData
+          \$deviceSpec.Device.Backing = New-Object VMware.Vim.VirtualCdromRemotePassthroughBackingInfo
+          \$deviceSpec.Device.Connectable.Connected = \$false
+          \$spec.DeviceChange = \$deviceSpec
+          \$vm.ExtensionData.ReconfigVM(\$spec)
+          Write-Output 'SUCCESS: Force disconnected locked CD drive'
+        } else {
+          Write-Output \"ERROR: \$(\$_.Exception.Message)\"
+        }
+      }
+    }
+    Disconnect-VIServer -Confirm:\$false
+    "
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
@@ -76,42 +94,22 @@
   when: 
     - not (dry_run | bool)
     - item.1.hot_removable | bool
-  register: disconnect_results
+  register: powercli_disconnect_results
   failed_when: false
-  retries: 2
-  delay: 3
 
-- name: Report successful disconnections
+- name: Report PowerCLI disconnect results
   ansible.builtin.debug:
     msg: |
       ===================================================
-      SUCCESSFUL DISCONNECTION:
+      CD DISCONNECT RESULT:
       ===================================================
       VM: {{ item.item.0.vm_name }}
       Device: {{ item.item.1.device_label }}
-      Media: {{ item.item.1.media_path }}
-      Result: {{ 'SUCCESS' if item.changed else 'NO CHANGE NEEDED' }}
+      Result: {{ item.stdout | default('No output') }}
+      Error: {{ item.stderr | default('None') }}
       ===================================================
-  loop: "{{ disconnect_results.results | default([]) }}"
-  when: 
-    - not (dry_run | bool)
-    - item.item.1.hot_removable | bool
-    - item.failed is not defined or not item.failed
-
-- name: Report failed disconnections
-  ansible.builtin.debug:
-    msg: |
-      ===================================================
-      FAILED DISCONNECTION:
-      ===================================================
-      VM: {{ item.item.0.vm_name }}
-      Device: {{ item.item.1.device_label }}
-      Error: {{ item.msg | default('Unknown error') }}
-      ===================================================
-  loop: "{{ disconnect_results.results | default([]) }}"
-  when: 
-    - not (dry_run | bool)
-    - item.failed is defined and item.failed
+  loop: "{{ powercli_disconnect_results.results | default([]) }}"
+  when: not (dry_run | bool)
 
 - name: Report devices requiring manual intervention
   ansible.builtin.debug:
