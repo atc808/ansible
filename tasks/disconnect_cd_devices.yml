@@ -62,6 +62,7 @@
     password: "{{ vcenter_password }}"
     validate_certs: false
     uuid: "{{ item.0.uuid }}"
+    force: true
     cdrom:
       - controller_number: "{{ item.1.controller_number }}"
         unit_number: "{{ item.1.unit_number }}"
