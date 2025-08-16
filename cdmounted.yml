@@ -110,13 +110,62 @@
 
         - name: Process VM hardware results
           block:
+            - name: Debug VM hardware structure
+              debug:
+                msg: |
+                  VM: {{ vm_info.virtual_machines[ansible_loop.index0].guest_name }}
+                  Has instance: {{ item.instance is defined }}
+                  Has config: {{ item.instance.config is defined if item.instance is defined else 'N/A' }}
+                  Has hardware: {{ item.instance.config.hardware is defined if (item.instance is defined and item.instance.config is defined) else 'N/A' }}
+                  Device count: {{ item.instance.config.hardware.device | length if (item.instance is defined and item.instance.config is defined and item.instance.config.hardware is defined) else 'N/A' }}
+              when: ansible_loop.index0 < 3  # Only show first 3 VMs to avoid spam
+
             - name: Initialize CD devices list for current VM
               set_fact:
                 current_vm_cd_devices: []
 
+            - name: Debug device types for first VM
+              debug:
+                msg: |
+                  Device {{ device_index }}: {{ device.deviceInfo.label | default('No label') }}
+                  Device type: {{ device | type_debug }}
+                  Has deviceInfo: {{ device.deviceInfo is defined }}
+                  Has label: {{ device.deviceInfo.label is defined if device.deviceInfo is defined else 'N/A' }}
+                  Label content: {{ device.deviceInfo.label if (device.deviceInfo is defined and device.deviceInfo.label is defined) else 'N/A' }}
+                  Has connectable: {{ device.connectable is defined }}
+                  Connected: {{ device.connectable.connected if device.connectable is defined else 'N/A' }}
+              loop: "{{ item.instance.config.hardware.device | default([]) }}"
+              loop_control:
+                loop_var: device
+                index_var: device_index
+              when: 
+                - ansible_loop.index0 == 0  # Only debug first VM
+                - device_index < 5  # Only show first 5 devices
+
             - name: Process each device to find CD/DVD devices
-              set_fact:
-                current_vm_cd_devices: "{{ current_vm_cd_devices + [cd_device_info] }}"
+              block:
+                - name: Debug CD device detection
+                  debug:
+                    msg: |
+                      Checking device: {{ device.deviceInfo.label | default('No label') }}
+                      Is CD device: {{ is_cd_device }}
+                      Is connected: {{ is_connected }}
+                      Device info defined: {{ device.deviceInfo is defined }}
+                      Label defined: {{ device.deviceInfo.label is defined if device.deviceInfo is defined else false }}
+                      Connectable defined: {{ device.connectable is defined }}
+                      Connected value: {{ device.connectable.connected if device.connectable is defined else 'N/A' }}
+                  when: 
+                    - ansible_loop.index0 == 0  # Only debug first VM
+                    - (device.deviceInfo is defined and 'CD' in (device.deviceInfo.label | default(''))) or 
+                      (device.deviceInfo is defined and 'dvd' in (device.deviceInfo.label | default('') | lower))
+
+                - name: Add CD device to list
+                  set_fact:
+                    current_vm_cd_devices: "{{ current_vm_cd_devices + [cd_device_info] }}"
+                  when: 
+                    - is_cd_device | bool
+                    - is_connected | bool
+
               vars:
                 device_key_int: "{{ device.key | default(0) | int }}"
                 is_cd_device: >-
@@ -125,6 +174,8 @@
                     device.deviceInfo.label is defined and
                     (
                       'CD/DVD' in device.deviceInfo.label or
+                      'CD' in device.deviceInfo.label or
+                      'DVD' in device.deviceInfo.label or
                       'cdrom' in device.deviceInfo.label.lower()
                     )
                   }}
@@ -168,9 +219,6 @@
               loop_control:
                 loop_var: device
                 label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
-              when: 
-                - is_cd_device | bool
-                - is_connected | bool
 
             - name: Add VM to results if it has connected CD devices
               set_fact:
