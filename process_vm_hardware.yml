@@ -1,5 +1,6 @@
+
 ---
-# Separate task file: process_vm_hardware.yml
+# Process VM hardware to find CD devices
 - name: Record failed VM query
   set_fact:
     failed_vm_queries: >-
