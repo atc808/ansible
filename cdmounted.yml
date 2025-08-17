@@ -3,7 +3,6 @@
   hosts: all
   gather_facts: false
   connection: local
-  #working but doen't answer question on linux hosts
   vars:
     # AAP credential variables - these will be injected by AAP
     vcenter_username: "{{ ansible_user }}"
@@ -12,6 +11,9 @@
     # Control variables
     disconnect: true
     dry_run: false  # Set to true to see what would be disconnected without making changes
+    
+    # Force disconnect bypasses guest OS CD locks (resolves dialog issue)
+    force_disconnect: true
     
     # VM blacklist - VMs to exclude from disconnect operations (case-sensitive)
     vm_blacklist: []
@@ -40,7 +42,11 @@
           Target ESXi Host: {{ inventory_hostname }}
           Disconnect Mode: {{ disconnect }}
           Dry Run Mode: {{ dry_run }}
+          Force Disconnect: {{ force_disconnect }}
           VM Blacklist: {{ vm_blacklist | length }} VMs excluded
+          
+          DIALOG HANDLING:
+          Force disconnect will bypass guest OS CD lock dialogs
           ===================================================
 
     - name: Test ESXi connection and gather VM information
