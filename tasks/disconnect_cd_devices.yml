@@ -1,11 +1,10 @@
 ---
-# Simplified disconnect_cd_devices.yml with force disconnect to handle dialogs
+# Final solution: Disconnect CD devices by removing all CD/DVD drives
 
 - name: Initialize disconnect variables
   ansible.builtin.set_fact:
     vms_eligible_for_disconnect: []
     successful_disconnects: []
-    no_change_needed: []
     failed_disconnects: []
 
 - name: Filter VMs for disconnect operations
@@ -18,31 +17,6 @@
         list
       }}
 
-- name: Calculate disconnect statistics
-  ansible.builtin.set_fact:
-    all_cd_devices: >-
-      {{
-        vms_eligible_for_disconnect |
-        map(attribute='cd_devices') |
-        flatten
-      }}
-    hot_removable_devices: >-
-      {{
-        vms_eligible_for_disconnect |
-        map(attribute='cd_devices') |
-        flatten |
-        selectattr('hot_removable', 'equalto', true) |
-        list
-      }}
-    manual_intervention_devices: >-
-      {{
-        vms_eligible_for_disconnect |
-        map(attribute='cd_devices') |
-        flatten |
-        selectattr('hot_removable', 'equalto', false) |
-        list
-      }}
-
 - name: Display dry-run information
   ansible.builtin.debug:
     msg: |
@@ -50,43 +24,37 @@
       DRY RUN MODE - NO CHANGES WILL BE MADE
       ===================================================
       VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
-      Hot-removable devices that would be disconnected: {{ hot_removable_devices | length }}
-      Devices requiring manual intervention: {{ manual_intervention_devices | length }}
       Force disconnect enabled: {{ force_disconnect | default(true) }}
       
-      Hot-removable devices:
+      VMs with CD devices that would be processed:
       {% for vm in vms_eligible_for_disconnect %}
+      - {{ vm.vm_name }}: {{ vm.cd_devices | length }} CD device(s)
       {% for cd in vm.cd_devices %}
-      {% if cd.hot_removable %}
-      - {{ vm.vm_name }}: {{ cd.device_label }} ({{ cd.media_path }})
-      {% endif %}
+        * {{ cd.device_label }} ({{ cd.media_path }}) - Key: {{ cd.device_key }}
       {% endfor %}
       {% endfor %}
       ===================================================
   when: dry_run | bool
 
-- name: Disconnect hot-removable CD devices (with force to bypass guest locks)
+# Simplified approach: Remove all CD/DVD drives from VMs that have connected media
+- name: Disconnect CD devices by removing all CD/DVD drives
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
     validate_certs: false
-    uuid: "{{ item.0.uuid }}"
-    force: "{{ force_disconnect | default(true) }}"  # Bypasses "guest locked CD" dialog
-    cdrom:
-      - controller_number: "{{ item.1.controller_number }}"
-        unit_number: "{{ item.1.unit_number }}"
-        state: present
-        type: none
-  with_subelements:
-    - "{{ vms_eligible_for_disconnect }}"
-    - cd_devices
+    uuid: "{{ item.uuid }}"
+    force: "{{ force_disconnect | default(true) }}"
+    state: present
+    hardware:
+      # Set cdrom to empty list to remove all CD/DVD drives
+      cdrom: []
+  loop: "{{ vms_eligible_for_disconnect }}"
   loop_control:
-    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+    label: "{{ item.vm_name }}"
   delegate_to: localhost
   when: 
     - not (dry_run | bool)
-    - item.1.hot_removable | bool
   register: disconnect_results
   failed_when: false
   retries: 3
@@ -98,13 +66,6 @@
       {{
         disconnect_results.results | default([]) |
         selectattr('changed', 'equalto', true) |
-        list
-      }}
-    no_change_needed: >-
-      {{
-        disconnect_results.results | default([]) |
-        rejectattr('failed', 'defined') |
-        selectattr('changed', 'equalto', false) |
         list
       }}
     failed_disconnects: >-
@@ -122,74 +83,36 @@
   ansible.builtin.debug:
     msg: |
       ===================================================
-      SUCCESSFUL DISCONNECTION:
+      SUCCESSFUL CD REMOVAL:
       ===================================================
-      VM: {{ item.item.0.vm_name }}
-      Device: {{ item.item.1.device_label }}
-      Media: {{ item.item.1.media_path }}
-      Result: CD DISCONNECTED (Force bypass used)
+      VM: {{ item.item.vm_name }}
+      UUID: {{ item.item.uuid }}
+      CD Devices Removed: {{ item.item.cd_devices | length }}
+      Result: All CD/DVD drives removed from VM
+      Force Used: {{ force_disconnect | default(true) }}
       ===================================================
   loop: "{{ successful_disconnects | default([]) }}"
   when: 
     - not (dry_run | bool)
     - successful_disconnects | length > 0
 
-- name: Report devices that were already disconnected
-  ansible.builtin.debug:
-    msg: |
-      ===================================================
-      NO CHANGE NEEDED:
-      ===================================================
-      VM: {{ item.item.0.vm_name }}
-      Device: {{ item.item.1.device_label }}
-      Media: {{ item.item.1.media_path }}
-      Result: Already disconnected
-      ===================================================
-  loop: "{{ no_change_needed | default([]) }}"
-  when: 
-    - not (dry_run | bool)
-    - no_change_needed | length > 0
-
 - name: Report failed disconnections
   ansible.builtin.debug:
     msg: |
       ===================================================
-      DISCONNECTION FAILED:
+      CD REMOVAL FAILED:
       ===================================================
-      VM: {{ item.item.0.vm_name }}
-      Device: {{ item.item.1.device_label }}
-      Media: {{ item.item.1.media_path }}
+      VM: {{ item.item.vm_name }}
+      UUID: {{ item.item.uuid }}
+      CD Devices: {{ item.item.cd_devices | length }}
       Error: {{ item.msg | default('Unknown error') }}
       
-      Note: Force disconnect was enabled but still failed.
-      Check VM power state and ESXi host connectivity.
+      Manual intervention required:
+      1. Use vSphere Client to edit VM settings
+      2. Remove CD/DVD drives manually
+      3. Or power off VM and retry
       ===================================================
   loop: "{{ failed_disconnects | default([]) }}"
   when: 
     - not (dry_run | bool)
     - failed_disconnects | length > 0
-
-- name: Report devices requiring manual intervention
-  ansible.builtin.debug:
-    msg: |
-      ===================================================
-      MANUAL INTERVENTION REQUIRED:
-      ===================================================
-      VM: {{ item.0.vm_name }}
-      Device: {{ item.1.device_label }}
-      Controller: {{ item.1.controller_type }}
-      Media: {{ item.1.media_path }}
-      
-      This device cannot be hot-removed. Options:
-      1. Edit VM settings in vSphere Client
-      2. Remove the CD/DVD drive manually
-      3. Power off the VM and retry this playbook
-      ===================================================
-  with_subelements:
-    - "{{ vms_eligible_for_disconnect }}"
-    - cd_devices
-  loop_control:
-    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
-  when: 
-    - vms_eligible_for_disconnect | length > 0
-    - not (item.1.hot_removable | bool)
