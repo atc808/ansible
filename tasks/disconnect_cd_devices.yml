@@ -1,5 +1,5 @@
 ---
-# Final solution: Disconnect CD devices by removing all CD/DVD drives
+# Alternative: Remove CD drives entirely using state: absent
 
 - name: Initialize disconnect variables
   ansible.builtin.set_fact:
@@ -26,32 +26,39 @@
       VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
       Force disconnect enabled: {{ force_disconnect | default(true) }}
       
-      VMs with CD devices that would be processed:
+      CD drives that would be REMOVED entirely:
       {% for vm in vms_eligible_for_disconnect %}
-      - {{ vm.vm_name }}: {{ vm.cd_devices | length }} CD device(s)
+      VM: {{ vm.vm_name }}
       {% for cd in vm.cd_devices %}
-        * {{ cd.device_label }} ({{ cd.media_path }}) - Key: {{ cd.device_key }}
+      - Device: {{ cd.device_label }} (Key: {{ cd.device_key }})
+        Media: {{ cd.media_path }}
+        Controller: {{ cd.controller_type }}
+        Action: REMOVE ENTIRE DRIVE
       {% endfor %}
       {% endfor %}
       ===================================================
   when: dry_run | bool
 
-# Simplified approach: Remove all CD/DVD drives from VMs that have connected media
-- name: Disconnect CD devices by removing all CD/DVD drives
+# Remove CD drives entirely using state: absent
+- name: Remove CD drives entirely from VMs
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
     validate_certs: false
-    uuid: "{{ item.uuid }}"
+    uuid: "{{ item.0.uuid }}"
     force: "{{ force_disconnect | default(true) }}"
     state: present
-    hardware:
-      # Set cdrom to empty list to remove all CD/DVD drives
-      cdrom: []
-  loop: "{{ vms_eligible_for_disconnect }}"
+    cdrom:
+      - controller_type: "{{ 'ide' if item.1.controller_type == 'IDE' else 'sata' }}"
+        controller_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
+        unit_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
+        state: absent
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
   loop_control:
-    label: "{{ item.vm_name }}"
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
   delegate_to: localhost
   when: 
     - not (dry_run | bool)
@@ -79,16 +86,18 @@
     - not (dry_run | bool)
     - disconnect_results is defined
 
-- name: Report successful disconnections
+- name: Report successful CD drive removals
   ansible.builtin.debug:
     msg: |
       ===================================================
-      SUCCESSFUL CD REMOVAL:
+      SUCCESSFUL CD DRIVE REMOVAL:
       ===================================================
-      VM: {{ item.item.vm_name }}
-      UUID: {{ item.item.uuid }}
-      CD Devices Removed: {{ item.item.cd_devices | length }}
-      Result: All CD/DVD drives removed from VM
+      VM: {{ item.item.0.vm_name }}
+      Device: {{ item.item.1.device_label }}
+      Original Device Key: {{ item.item.1.device_key }}
+      Media: {{ item.item.1.media_path }}
+      Controller Type: {{ item.item.1.controller_type }}
+      Result: CD/DVD drive completely removed from VM
       Force Used: {{ force_disconnect | default(true) }}
       ===================================================
   loop: "{{ successful_disconnects | default([]) }}"
@@ -96,21 +105,20 @@
     - not (dry_run | bool)
     - successful_disconnects | length > 0
 
-- name: Report failed disconnections
+- name: Report failed CD drive removals
   ansible.builtin.debug:
     msg: |
       ===================================================
-      CD REMOVAL FAILED:
+      CD DRIVE REMOVAL FAILED:
       ===================================================
-      VM: {{ item.item.vm_name }}
-      UUID: {{ item.item.uuid }}
-      CD Devices: {{ item.item.cd_devices | length }}
+      VM: {{ item.item.0.vm_name }}
+      Device: {{ item.item.1.device_label }}
+      Original Device Key: {{ item.item.1.device_key }}
+      Media: {{ item.item.1.media_path }}
+      Controller Type: {{ item.item.1.controller_type }}
       Error: {{ item.msg | default('Unknown error') }}
       
-      Manual intervention required:
-      1. Use vSphere Client to edit VM settings
-      2. Remove CD/DVD drives manually
-      3. Or power off VM and retry
+      Manual intervention required via vSphere Client.
       ===================================================
   loop: "{{ failed_disconnects | default([]) }}"
   when: 
