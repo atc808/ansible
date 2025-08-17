@@ -17,19 +17,29 @@
         map(attribute='cd_devices') |
         flatten
       }}
-    hot_removable_devices: >-
+    hot_removable_ide_devices: >-
       {{
         vms_eligible_for_disconnect |
         map(attribute='cd_devices') |
         flatten |
         selectattr('hot_removable', 'equalto', true) |
+        selectattr('controller_type', 'equalto', 'IDE') |
         list
       }}
-    manual_intervention_devices: >-
+    sata_devices_need_manual: >-
       {{
         vms_eligible_for_disconnect |
         map(attribute='cd_devices') |
         flatten |
+        selectattr('controller_type', 'equalto', 'SATA') |
+        list
+      }}
+    other_manual_devices: >-
+      {{
+        vms_eligible_for_disconnect |
+        map(attribute='cd_devices') |
+        flatten |
+        rejectattr('controller_type', 'equalto', 'SATA') |
         selectattr('hot_removable', 'equalto', false) |
         list
       }}
@@ -41,13 +51,23 @@
       DRY RUN MODE - NO CHANGES WILL BE MADE
       ===================================================
       VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
-      Hot-removable devices that would be disconnected: {{ hot_removable_devices | length }}
-      Devices requiring manual intervention: {{ manual_intervention_devices | length }}
+      IDE devices that would be disconnected: {{ hot_removable_ide_devices | length }}
+      SATA devices requiring manual intervention: {{ sata_devices_need_manual | length }}
+      Other devices requiring manual intervention: {{ other_manual_devices | length }}
       
-      Hot-removable devices:
+      IDE devices that would be disconnected:
       {% for vm in vms_eligible_for_disconnect %}
       {% for cd in vm.cd_devices %}
-      {% if cd.hot_removable %}
+      {% if cd.hot_removable and cd.controller_type == 'IDE' %}
+      - {{ vm.vm_name }}: {{ cd.device_label }} ({{ cd.media_path }})
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      
+      SATA devices (require manual intervention):
+      {% for vm in vms_eligible_for_disconnect %}
+      {% for cd in vm.cd_devices %}
+      {% if cd.controller_type == 'SATA' %}
       - {{ vm.vm_name }}: {{ cd.device_label }} ({{ cd.media_path }})
       {% endif %}
       {% endfor %}
@@ -309,6 +329,7 @@
   when: 
     - not (dry_run | bool)
     - item.1.hot_removable | bool
+    - item.1.controller_type == 'IDE'
 
 - name: Debug - Check all conditions for disconnect execution
   ansible.builtin.debug:
@@ -323,25 +344,29 @@
       VM Counts:
       - vms_with_cd_media: {{ vms_with_cd_media | length }}
       - vms_eligible_for_disconnect: {{ vms_eligible_for_disconnect | length }}
-      - hot_removable_devices: {{ hot_removable_devices | length }}
+      - hot_removable_ide_devices: {{ hot_removable_ide_devices | length }}
+      - sata_devices_need_manual: {{ sata_devices_need_manual | length }}
+      - other_manual_devices: {{ other_manual_devices | length }}
       
       {% if vms_eligible_for_disconnect | length > 0 %}
       Eligible VMs Details:
       {% for vm in vms_eligible_for_disconnect %}
       VM: {{ vm.vm_name }}
       - Total CD devices: {{ vm.cd_devices | length }}
-      - Hot removable devices: {{ vm.cd_devices | selectattr('hot_removable', 'equalto', true) | list | length }}
+      - IDE hot removable devices: {{ vm.cd_devices | selectattr('hot_removable', 'equalto', true) | selectattr('controller_type', 'equalto', 'IDE') | list | length }}
+      - SATA devices: {{ vm.cd_devices | selectattr('controller_type', 'equalto', 'SATA') | list | length }}
       - Device details:
       {% for cd in vm.cd_devices %}
         * {{ cd.device_label }}: hot_removable={{ cd.hot_removable }}, controller={{ cd.controller_type }}
+          {% if cd.controller_type == 'IDE' and cd.hot_removable %}[WILL ATTEMPT DISCONNECT]{% else %}[MANUAL INTERVENTION]{% endif %}
       {% endfor %}
       {% endfor %}
       {% endif %}
       
       Conditions for session token:
       - not dry_run: {{ not (dry_run | bool) }}
-      - hot_removable_devices > 0: {{ hot_removable_devices | length > 0 }}
-      - Combined: {{ not (dry_run | bool) and hot_removable_devices | length > 0 }}
+      - hot_removable_ide_devices > 0: {{ hot_removable_ide_devices | length > 0 }}
+      - Combined: {{ not (dry_run | bool) and hot_removable_ide_devices | length > 0 }}
       ===================================================
 
 - name: Debug - Show which devices should be processed
@@ -379,7 +404,7 @@
   run_once: true
   when: 
     - not (dry_run | bool)
-    - hot_removable_devices | length > 0
+    - hot_removable_ide_devices | length > 0
 
 - name: Debug session token result
   ansible.builtin.debug:
@@ -450,6 +475,7 @@
   when: 
     - not (dry_run | bool)
     - item.1.hot_removable | bool
+    - item.1.controller_type == 'IDE'
     - session_token is defined
     - session_token.json is defined
   register: vmware_api_results
@@ -534,11 +560,11 @@
     - not (dry_run | bool)
     - parsed_results is defined
 
-- name: Report devices requiring manual intervention
+- name: Report SATA devices requiring manual intervention
   ansible.builtin.debug:
     msg: |
       ===================================================
-      MANUAL INTERVENTION REQUIRED:
+      SATA CD/DVD DEVICE - MANUAL INTERVENTION REQUIRED:
       ===================================================
       VM: {{ item.0.vm_name }}
       Device: {{ item.1.device_label }}
@@ -546,7 +572,35 @@
       Media: {{ item.1.media_path }}
       Device Key: {{ item.1.device_key }}
       
-      This device cannot be hot-removed. Options:
+      SATA CD/DVD devices cannot be hot-disconnected while VM is running.
+      Options:
+      1. Use vSphere Client to manually disconnect the media
+      2. Power off the VM, then run this playbook again
+      3. Edit VM settings and remove the CD/DVD drive entirely
+      
+      Note: This is a VMware limitation for SATA controllers.
+      ===================================================
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+  when: item.1.controller_type == 'SATA'
+
+- name: Report other devices requiring manual intervention
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      NON-HOT-REMOVABLE DEVICE - MANUAL INTERVENTION REQUIRED:
+      ===================================================
+      VM: {{ item.0.vm_name }}
+      Device: {{ item.1.device_label }}
+      Controller: {{ item.1.controller_type }}
+      Media: {{ item.1.media_path }}
+      Device Key: {{ item.1.device_key }}
+      
+      This device cannot be hot-removed while VM is running.
+      Options:
       1. Use vSphere Client to manually disconnect
       2. Power off the VM and retry this playbook  
       3. Edit VM settings and remove the CD/DVD drive
@@ -556,7 +610,9 @@
     - cd_devices
   loop_control:
     label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
-  when: not (item.1.hot_removable | bool)
+  when: 
+    - item.1.controller_type != 'SATA'
+    - not (item.1.hot_removable | bool)
 
 - name: Create summary of disconnect operations
   ansible.builtin.set_fact:
@@ -592,6 +648,8 @@
       failed_count: "{{ failed_disconnects | default([]) | length }}"
       no_change_count: "{{ no_change_needed | default([]) | length }}"
       total_processed: "{{ parsed_results | default([]) | length }}"
+      sata_manual_count: "{{ sata_devices_need_manual | default([]) | length }}"
+      other_manual_count: "{{ other_manual_devices | default([]) | length }}"
   when: parsed_results is defined
 
 - name: Display disconnect operation summary
@@ -604,7 +662,13 @@
       Successful disconnections: {{ disconnect_results.successful_count | default(0) }}
       No changes needed: {{ disconnect_results.no_change_count | default(0) }}
       Failed operations: {{ disconnect_results.failed_count | default(0) }}
-      Manual intervention required: {{ manual_intervention_devices | length }}
+      SATA devices (manual intervention): {{ disconnect_results.sata_manual_count | default(0) }}
+      Other manual intervention required: {{ disconnect_results.other_manual_count | default(0) }}
+      
+      Summary:
+      - IDE devices: Attempted automatic disconnect
+      - SATA devices: Require manual intervention (VMware limitation)
+      - Other non-hot-removable: Require manual intervention
       ===================================================
   when: 
     - not (dry_run | bool)
