@@ -27,12 +27,14 @@
             else 1 if (device.key | default(0) | int) == 3001
             else 0 if (device.key | default(0) | int) == 3002
             else 1 if (device.key | default(0) | int) == 3003
+            else 0 if (device.key | default(0) | int) in [15000, 16000]
+            else 1 if (device.key | default(0) | int) in [15001, 16001]
             else (((device.key | default(0) | int) - 15000) // 1000) if (device.key | default(0) | int) >= 15000
             else 0
           ),
           'unit_number': (
-            0 if (device.key | default(0) | int) in [3000, 3002]
-            else 1 if (device.key | default(0) | int) in [3001, 3003]
+            0 if (device.key | default(0) | int) in [3000, 3002, 15000, 16000]
+            else 1 if (device.key | default(0) | int) in [3001, 3003, 15001, 16001]
             else (((device.key | default(0) | int) - 15000) % 1000) % 30 if (device.key | default(0) | int) >= 15000
             else 0
           ),
