@@ -10,7 +10,6 @@
     failed_additions: []
     successful_disconnects: []
     failed_disconnects: []
-    ide_powered_on_vms: []
 
 - name: Filter VMs for disconnect operations
   ansible.builtin.set_fact:
@@ -19,19 +18,6 @@
         vms_with_cd_media |
         rejectattr('vm_name', 'in', vm_blacklist) |
         selectattr('cd_devices', 'defined') |
-        list
-      }}
-
-- name: Identify IDE CD drives on powered-on VMs (cannot hot-remove)
-  ansible.builtin.set_fact:
-    ide_powered_on_vms: >-
-      {{
-        vms_eligible_for_disconnect |
-        selectattr('power_state', 'equalto', 'poweredOn') |
-        selectattr('cd_devices', 'defined') |
-        map('extract', ['cd_devices']) |
-        flatten |
-        selectattr('controller_type', 'equalto', 'IDE') |
         list
       }}
 
