@@ -1,0 +1,73 @@
+---
+#===============================================================================
+# VM Hardware Processing and Device Query
+#===============================================================================
+# Purpose: Query individual VM hardware details and process CD/DVD devices
+# Called by: cdmounted.yml main playbook (in loop for each VM)
+#
+# Description:
+#   This task file handles querying detailed hardware information for each
+#   virtual machine, including all virtual devices. It includes error handling
+#   for VMs that may be inaccessible or have permission issues, ensuring that
+#   individual VM failures don't stop the entire operation.
+#
+# Variables Used:
+#   - vm_item: Current VM being processed (from loop)
+#   - vm_index: Loop index for debugging purposes
+#   - failed_vm_queries: List to track VMs that failed hardware queries
+#
+# Dependencies:
+#   - community.vmware.vmware_guest_info module
+#   - find_cd_devices.yml task file
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# VM Hardware Information Query
+#-------------------------------------------------------------------------------
+# Queries detailed hardware configuration for the current VM
+# Uses vSphere schema to get raw device information needed for CD/DVD analysis
+- name: Query VM hardware information
+  community.vmware.vmware_guest_info:
+    hostname: "{{ inventory_hostname }}"        # ESXi host FQDN or IP address
+    username: "{{ vcenter_username }}"          # ESXi/vCenter username
+    password: "{{ vcenter_password }}"          # ESXi/vCenter password
+    validate_certs: false                       # Skip SSL certificate validation
+    uuid: "{{ vm_item.uuid }}"                  # Unique identifier for target VM
+    schema: "vsphere"                           # Use vSphere schema for detailed info
+    properties:
+      - "config.hardware.device"                # Query all virtual hardware devices
+  register: vm_hardware                        # Store results in vm_hardware variable
+  delegate_to: localhost                       # Run from Ansible control node
+  failed_when: false                           # Don't fail task, capture errors
+  retries: 2                                   # Retry up to 2 times on failure
+  delay: 2                                     # Wait 2 seconds between retries
+
+#-------------------------------------------------------------------------------
+# Failed Query Tracking
+#-------------------------------------------------------------------------------
+# Records VMs that failed hardware queries for later reporting
+# Individual VM failures are tracked but don't stop the overall operation
+- name: Record failed VM query
+  ansible.builtin.set_fact:
+    failed_vm_queries: >-
+      {{
+        failed_vm_queries + [{
+          'vm_name': vm_item.guest_name | default('Unknown'),
+          'uuid': vm_item.uuid,
+          'error': vm_hardware.msg | default('Hardware query failed')
+        }]
+      }}
+  when: vm_hardware.failed is defined and vm_hardware.failed
+
+#-------------------------------------------------------------------------------
+# CD/DVD Device Analysis
+#-------------------------------------------------------------------------------
+# Processes the VM hardware information to identify CD/DVD devices
+# Only processes VMs where hardware query was successful and returned valid data
+- name: Process VM hardware to find CD devices
+  ansible.builtin.include_tasks: tasks/find_cd_devices.yml
+  when:
+    - vm_hardware.failed is not defined or not vm_hardware.failed  # Query succeeded
+    - vm_hardware.instance is defined                              # Instance data exists
+    - vm_hardware.instance.config is defined                       # Config section exists
+    - vm_hardware.instance.config.hardware is defined              # Hardware section exists

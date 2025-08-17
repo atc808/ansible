@@ -1,6 +1,37 @@
 ---
-# Enhanced: Remove CD drives with media, then add clean CD drives without media
+#===============================================================================
+# Enhanced CD/DVD Device Disconnect Operations
+#===============================================================================
+# Purpose: Perform two-step CD device removal and clean drive addition
+# Called by: cdmounted.yml main playbook when disconnect is enabled
+#
+# Description:
+#   This task file implements an enhanced disconnect process that addresses
+#   common VMware CD/DVD device issues by completely removing drives with
+#   media and then adding clean drives without media. This approach prevents
+#   media lock conflicts and ensures VMs remain functional for future use.
+#
+# Two-Step Process:
+#   Step 1: Remove existing CD drives with connected media
+#   Step 2: Add new clean CD drives without media attached
+#
+# Features:
+#   - Dry run mode support with detailed operation preview
+#   - VM blacklist filtering
+#   - Force disconnect to bypass guest OS locks
+#   - Comprehensive error handling and retry logic
+#   - Detailed success/failure reporting
+#
+# Variables Modified:
+#   - vms_eligible_for_disconnect: Filtered list of VMs for processing
+#   - successful_removals/failed_removals: Step 1 results tracking
+#   - successful_additions/failed_additions: Step 2 results tracking
+#===============================================================================
 
+#-------------------------------------------------------------------------------
+# Initialize Operation Variables
+#-------------------------------------------------------------------------------
+# Reset all tracking variables for the disconnect operations
 - name: Initialize disconnect variables
   ansible.builtin.set_fact:
     vms_eligible_for_disconnect: []
@@ -9,6 +40,10 @@
     successful_additions: []
     failed_additions: []
 
+#-------------------------------------------------------------------------------
+# VM Filtering for Disconnect Operations
+#-------------------------------------------------------------------------------
+# Filter VMs based on blacklist and ensure they have valid CD device data
 - name: Filter VMs for disconnect operations
   ansible.builtin.set_fact:
     vms_eligible_for_disconnect: >-
@@ -19,6 +54,11 @@
         list
       }}
 
+#-------------------------------------------------------------------------------
+# Dry Run Information Display
+#-------------------------------------------------------------------------------
+# Show detailed preview of what operations would be performed
+# Provides step-by-step breakdown for each VM and device
 - name: Display dry-run information
   ansible.builtin.debug:
     msg: |
@@ -41,21 +81,30 @@
       ===================================================
   when: dry_run | bool
 
-# STEP 1: Remove existing CD drives with media
+#===============================================================================
+# STEP 1: CD DRIVE REMOVAL OPERATIONS
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Remove Existing CD Drives with Media
+#-------------------------------------------------------------------------------
+# Completely removes CD drives that have connected media
+# Uses controller type detection to set appropriate parameters
 - name: Step 1 - Remove CD drives with connected media
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
     validate_certs: false
-    uuid: "{{ item.0.uuid }}"
-    force: "{{ force_disconnect | default(true) }}"
-    state: present
+    uuid: "{{ item.0.uuid }}"                    # Target VM UUID
+    force: "{{ force_disconnect | default(true) }}"  # Bypass guest OS locks
+    state: present                               # Modify existing VM
     cdrom:
+      # Controller type mapping: IDE vs SATA
       - controller_type: "{{ 'ide' if item.1.controller_type == 'IDE' else 'sata' }}"
         controller_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
         unit_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
-        state: absent
+        state: absent                            # Remove the device
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
@@ -63,12 +112,16 @@
     label: "{{ item.0.vm_name }} - Remove {{ item.1.device_label }}"
   delegate_to: localhost
   when: 
-    - not (dry_run | bool)
+    - not (dry_run | bool)                       # Skip in dry run mode
   register: removal_results
-  failed_when: false
-  retries: 3
-  delay: 5
+  failed_when: false                             # Capture failures, don't stop
+  retries: 3                                     # Retry up to 3 times
+  delay: 5                                       # Wait 5 seconds between retries
 
+#-------------------------------------------------------------------------------
+# Categorize Removal Results
+#-------------------------------------------------------------------------------
+# Separate successful and failed removal operations for tracking and reporting
 - name: Categorize removal results
   ansible.builtin.set_fact:
     successful_removals: >-
@@ -88,7 +141,11 @@
     - not (dry_run | bool)
     - removal_results is defined
 
-# Brief pause to allow ESXi to process the removals
+#-------------------------------------------------------------------------------
+# Processing Pause
+#-------------------------------------------------------------------------------
+# Brief pause to allow ESXi to complete device removal processing
+# Prevents race conditions between removal and addition operations
 - name: Pause to allow CD drive removal to complete
   ansible.builtin.pause:
     seconds: 5
@@ -96,22 +153,31 @@
     - not (dry_run | bool)
     - successful_removals | length > 0
 
-# STEP 2: Add new clean CD drives without media
+#===============================================================================
+# STEP 2: CLEAN CD DRIVE ADDITION OPERATIONS
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Add New Clean CD Drives
+#-------------------------------------------------------------------------------
+# Adds new CD drives without media for VMs where removal was successful
+# Maintains VM functionality while preventing media lock issues
 - name: Step 2 - Add new clean CD drives without media
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
     validate_certs: false
-    uuid: "{{ item.item.0.uuid }}"
+    uuid: "{{ item.item.0.uuid }}"               # Target VM UUID from removal result
     force: "{{ force_disconnect | default(true) }}"
     state: present
     cdrom:
+      # Use same controller type as original device
       - controller_type: "{{ 'ide' if item.item.1.controller_type == 'IDE' else 'sata' }}"
         controller_number: "{{ 0 if item.item.1.controller_type == 'IDE' else 0 }}"
         unit_number: "{{ 0 if item.item.1.controller_type == 'IDE' else 0 }}"
-        type: none
-        state: present
+        type: none                               # No media attached
+        state: present                           # Add the device
   loop: "{{ successful_removals | default([]) }}"
   loop_control:
     label: "{{ item.item.0.vm_name }} - Add clean {{ item.item.1.controller_type }} CD drive"
@@ -120,10 +186,14 @@
     - not (dry_run | bool)
     - successful_removals | length > 0
   register: addition_results
-  failed_when: false
-  retries: 3
-  delay: 5
+  failed_when: false                             # Capture failures, don't stop
+  retries: 3                                     # Retry up to 3 times
+  delay: 5                                       # Wait 5 seconds between retries
 
+#-------------------------------------------------------------------------------
+# Categorize Addition Results
+#-------------------------------------------------------------------------------
+# Separate successful and failed addition operations for tracking and reporting
 - name: Categorize addition results
   ansible.builtin.set_fact:
     successful_additions: >-
@@ -143,7 +213,14 @@
     - not (dry_run | bool)
     - addition_results is defined
 
+#===============================================================================
 # REPORTING SECTION
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Successful Removal Reporting
+#-------------------------------------------------------------------------------
+# Report detailed information about successful CD drive removals
 - name: Report successful CD drive removals
   ansible.builtin.debug:
     msg: |
@@ -162,6 +239,10 @@
     - not (dry_run | bool)
     - successful_removals | length > 0
 
+#-------------------------------------------------------------------------------
+# Successful Addition Reporting
+#-------------------------------------------------------------------------------
+# Report detailed information about successful clean CD drive additions
 - name: Report successful clean CD drive additions
   ansible.builtin.debug:
     msg: |
@@ -179,6 +260,10 @@
     - not (dry_run | bool)
     - successful_additions | length > 0
 
+#-------------------------------------------------------------------------------
+# Failed Removal Reporting
+#-------------------------------------------------------------------------------
+# Report detailed information about failed CD drive removals
 - name: Report failed CD drive removals
   ansible.builtin.debug:
     msg: |
@@ -198,6 +283,10 @@
     - not (dry_run | bool)
     - failed_removals | length > 0
 
+#-------------------------------------------------------------------------------
+# Failed Addition Reporting
+#-------------------------------------------------------------------------------
+# Report detailed information about failed clean CD drive additions
 - name: Report failed clean CD drive additions
   ansible.builtin.debug:
     msg: |
@@ -216,6 +305,10 @@
     - not (dry_run | bool)
     - failed_additions | length > 0
 
+#-------------------------------------------------------------------------------
+# Operation Summary Display
+#-------------------------------------------------------------------------------
+# Display comprehensive summary of all disconnect operations
 - name: Display operation summary
   ansible.builtin.debug:
     msg: |

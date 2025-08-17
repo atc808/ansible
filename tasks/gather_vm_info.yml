@@ -1,0 +1,75 @@
+---
+#===============================================================================
+# ESXi Connection and VM Information Gathering
+#===============================================================================
+# Purpose: Test ESXi connectivity and gather basic VM information
+# Called by: cdmounted.yml main playbook
+#
+# Description:
+#   This task file handles the initial connection to ESXi hosts and gathers
+#   basic information about all virtual machines. It includes connection
+#   validation and error handling to ensure the host is accessible before
+#   proceeding with detailed VM analysis.
+#
+# Dependencies:
+#   - community.vmware.vmware_vm_info module
+#   - Valid ESXi credentials in vcenter_username/vcenter_password
+#   - Network connectivity to ESXi host on port 443
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Connection Validation Test
+#-------------------------------------------------------------------------------
+# Performs initial connection test to verify ESXi accessibility
+# Uses a lightweight query to minimize impact while validating connectivity
+- name: Test connection to ESXi host
+  community.vmware.vmware_vm_info:
+    hostname: "{{ inventory_hostname }}"        # ESXi host FQDN or IP address
+    username: "{{ vcenter_username }}"          # ESXi/vCenter username
+    password: "{{ vcenter_password }}"          # ESXi/vCenter password
+    validate_certs: false                       # Skip SSL certificate validation
+    vm_type: vm                                 # Query only virtual machines (not templates)
+    show_attribute: false                       # Skip extended attributes for speed
+  register: connection_test
+  delegate_to: localhost                        # Run from Ansible control node
+  failed_when: false                           # Don't fail task, capture result
+  changed_when: false                          # This is a read-only operation
+
+#-------------------------------------------------------------------------------
+# Connection Validation Assert
+#-------------------------------------------------------------------------------
+# Validates the connection test results and fails with clear error message
+# if connection cannot be established
+- name: Validate ESXi connection
+  ansible.builtin.assert:
+    that:
+      - connection_test is not failed           # Connection must succeed
+      - connection_test.virtual_machines is defined  # Must return VM list
+    fail_msg: "Failed to connect to ESXi host {{ inventory_hostname }}: {{ connection_test.msg | default('Unknown error') }}"
+
+#-------------------------------------------------------------------------------
+# Comprehensive VM Information Gathering
+#-------------------------------------------------------------------------------
+# Gathers detailed VM information including attributes needed for hardware analysis
+# Includes retry logic to handle temporary ESXi API issues
+- name: Gather VM information from ESXi host
+  community.vmware.vmware_vm_info:
+    hostname: "{{ inventory_hostname }}"        # ESXi host FQDN or IP address
+    username: "{{ vcenter_username }}"          # ESXi/vCenter username
+    password: "{{ vcenter_password }}"          # ESXi/vCenter password
+    validate_certs: false                       # Skip SSL certificate validation
+    vm_type: vm                                 # Query only virtual machines
+    show_attribute: true                        # Include extended VM attributes
+  register: vm_info                            # Store results in vm_info variable
+  delegate_to: localhost                       # Run from Ansible control node
+  retries: 3                                   # Retry up to 3 times on failure
+  delay: 5                                     # Wait 5 seconds between retries
+  until: vm_info is not failed                 # Continue retrying until successful
+
+#-------------------------------------------------------------------------------
+# Discovery Summary
+#-------------------------------------------------------------------------------
+# Display summary of VMs discovered on the ESXi host
+- name: Display VM discovery summary
+  ansible.builtin.debug:
+    msg: "Found {{ vm_info.virtual_machines | length }} VMs on {{ inventory_hostname }}"

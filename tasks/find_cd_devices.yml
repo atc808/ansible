@@ -1,0 +1,157 @@
+---
+#===============================================================================
+# CD/DVD Device Detection and Classification
+#===============================================================================
+# Purpose: Analyze VM hardware devices to identify connected CD/DVD drives
+# Called by: process_vm_hardware.yml
+#
+# Description:
+#   This task file contains the core logic for detecting and classifying
+#   CD/DVD devices within virtual machine hardware configurations. It identifies
+#   devices by label patterns, determines controller types, calculates device
+#   positions, and classifies media types.
+#
+# Device Detection Logic:
+#   - Searches for devices with CD/DVD-related labels
+#   - Identifies IDE (key < 15000) vs SATA (key >= 15000) controllers
+#   - Calculates controller and unit numbers from device keys
+#   - Classifies media types (ISO files, physical drives, etc.)
+#   - Only includes devices that are connected or have backing media
+#
+# Variables Modified:
+#   - current_vm_cd_devices: List of CD devices for current VM
+#   - vms_with_cd_media: Global list of VMs with connected CD devices
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Initialize Current VM Device List
+#-------------------------------------------------------------------------------
+# Reset the CD device list for the current VM being processed
+- name: Initialize CD devices list for current VM
+  ansible.builtin.set_fact:
+    current_vm_cd_devices: []
+
+#-------------------------------------------------------------------------------
+# Debug Device Scanning (First VM Only)
+#-------------------------------------------------------------------------------
+# Provide debug information about device scanning for the first VM to help
+# with troubleshooting without overwhelming the logs
+- name: Debug device scanning for first VM only
+  ansible.builtin.debug:
+    msg: |
+      Scanning {{ vm_hardware.instance.config.hardware.device | length }} devices for VM: {{ vm_item.guest_name }}
+      Looking for CD/DVD devices...
+  when: vm_index == 0
+
+#-------------------------------------------------------------------------------
+# CD/DVD Device Detection and Classification
+#-------------------------------------------------------------------------------
+# Main device detection loop - processes all hardware devices to find CD/DVD drives
+# Uses complex Jinja2 logic to classify devices and extract metadata
+- name: Add connected CD devices to list
+  ansible.builtin.set_fact:
+    current_vm_cd_devices: >-
+      {{
+        current_vm_cd_devices + [{
+          'device_label': device.deviceInfo.label,
+          'device_key': device.key | default('N/A'),
+          'connected': device.connectable.connected | default(false),
+          
+          # Controller Type Classification:
+          # IDE controllers use device keys < 15000
+          # SATA controllers use device keys >= 15000
+          'controller_type': 'IDE' if (device.key | default(0) | int) < 15000 else 'SATA',
+          
+          # All CD/DVD devices are hot-removable in modern VMware
+          'hot_removable': true,
+          
+          # Controller Number Calculation:
+          # IDE: 0 for keys < 3002, 1 for keys < 15000
+          # SATA: Calculated from (key - 15000) / 1000
+          'controller_number': (
+            0 if (device.key | default(0) | int) < 3002
+            else 1 if (device.key | default(0) | int) < 15000  
+            else (((device.key | default(0) | int) - 15000) // 1000)
+          ),
+          
+          # Unit Number Calculation:
+          # IDE: key % 2 (0 or 1 per controller)
+          # SATA: ((key - 15000) % 1000) % 30
+          'unit_number': (
+            (device.key | default(0) | int) % 2 if (device.key | default(0) | int) < 15000
+            else (((device.key | default(0) | int) - 15000) % 1000) % 30
+          ),
+          
+          # Media Type Classification:
+          # ISO File: Has backing.fileName (datastore path)
+          # Physical Drive: Has backing.deviceName (host device)
+          # Other: Connected but no detailed media info
+          'media_type': (
+            'ISO File' if (device.backing is defined and device.backing.fileName is defined)
+            else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined)
+            else 'Connected (no media details)'
+          ),
+          
+          # Media Path Extraction:
+          # Prioritize fileName (ISO) over deviceName (physical)
+          'media_path': (
+            device.backing.fileName | default(device.backing.deviceName | default('N/A'))
+            if device.backing is defined
+            else 'N/A'
+          )
+        }]
+      }}
+  loop: "{{ vm_hardware.instance.config.hardware.device | default([]) }}"
+  loop_control:
+    loop_var: device
+    label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
+  when: 
+    # Device must have valid device info
+    - device.deviceInfo is defined
+    - device.deviceInfo.label is defined
+    
+    # Label must contain CD/DVD-related keywords (case-insensitive for 'cdrom')
+    - ('CD/DVD' in device.deviceInfo.label or 'CD' in device.deviceInfo.label or 'DVD' in device.deviceInfo.label or 'cdrom' in device.deviceInfo.label.lower())
+    
+    # Device must have connectable properties
+    - device.connectable is defined
+    - device.connectable.connected is defined
+    
+    # Device must be either connected OR have backing media (ISO file)
+    - (device.connectable.connected == true or (device.backing is defined and device.backing.fileName is defined and device.backing.fileName | length > 0))
+
+#-------------------------------------------------------------------------------
+# Debug CD Device Detection (First VM Only)
+#-------------------------------------------------------------------------------
+# Show detailed information about detected CD devices for the first VM
+# Helps with troubleshooting device detection logic
+- name: Debug CD device detection for first VM
+  ansible.builtin.debug:
+    msg: |
+      Found {{ current_vm_cd_devices | length }} connected CD devices for VM: {{ vm_item.guest_name }}
+      {% for cd in current_vm_cd_devices %}
+      - {{ cd.device_label }}: {{ cd.media_type }} ({{ cd.media_path }})
+        Device Key: {{ cd.device_key }}, Controller: {{ cd.controller_type }}, Hot-Removable: {{ cd.hot_removable }}
+      {% endfor %}
+  when: 
+    - vm_index == 0
+    - current_vm_cd_devices | length > 0
+
+#-------------------------------------------------------------------------------
+# Add VM to Results List
+#-------------------------------------------------------------------------------
+# Add the current VM to the global results list if it has connected CD devices
+# Creates a comprehensive VM record with all necessary metadata
+- name: Add VM to results if it has connected CD devices
+  ansible.builtin.set_fact:
+    vms_with_cd_media: >-
+      {{
+        vms_with_cd_media + [{
+          'vm_name': vm_item.guest_name,
+          'power_state': vm_item.power_state,
+          'uuid': vm_item.uuid,
+          'esxi_host': inventory_hostname,
+          'cd_devices': current_vm_cd_devices
+        }]
+      }}
+  when: current_vm_cd_devices | length > 0

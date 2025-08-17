@@ -1,0 +1,50 @@
+---
+#===============================================================================
+# Results Display and Formatting
+#===============================================================================
+# Purpose: Format and display detailed information about discovered CD devices
+# Called by: cdmounted.yml main playbook
+#
+# Description:
+#   This task file handles the presentation of discovered VMs with connected
+#   CD/DVD devices. It provides a comprehensive view of each VM's CD device
+#   configuration, including controller types, media information, and device
+#   positioning details.
+#
+# Display Format:
+#   - VM identification (name, power state, blacklist status)
+#   - Device details (label, controller, media type/path)
+#   - Technical details (device key, hot-removable status, controller/unit)
+#
+# Variables Used:
+#   - vms_with_cd_media: List of VMs with connected CD devices
+#   - vm_blacklist: List of VMs excluded from operations
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# VM and CD Device Information Display
+#-------------------------------------------------------------------------------
+# Displays comprehensive information for each VM with connected CD devices
+# Uses structured formatting for easy reading and troubleshooting
+- name: Display VMs with connected CD devices
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      VM WITH CD MEDIA FOUND:
+      ===================================================
+      VM Name: {{ item.vm_name }}
+      Power State: {{ item.power_state }}
+      Blacklisted: {{ item.vm_name in vm_blacklist }}
+      
+      Connected CD/DVD Devices:
+      {% for cd in item.cd_devices %}
+      - Device: {{ cd.device_label }}
+        Controller Type: {{ cd.controller_type }}
+        Media Type: {{ cd.media_type }}
+        Media Path: {{ cd.media_path }}
+        Device Key: {{ cd.device_key }}
+        Hot-Removable: {{ cd.hot_removable }}
+        Controller/Unit: {{ cd.controller_number }}/{{ cd.unit_number }}
+      {% endfor %}
+      ===================================================
+  loop: "{{ vms_with_cd_media }}"
