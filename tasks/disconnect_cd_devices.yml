@@ -137,6 +137,7 @@
     successful_removals: >-
       {{
         removal_results.results | default([]) |
+        rejectattr('failed', 'defined') |
         selectattr('changed', 'equalto', true) |
         list
       }}
