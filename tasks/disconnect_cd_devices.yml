@@ -310,6 +310,59 @@
     - not (dry_run | bool)
     - item.1.hot_removable | bool
 
+- name: Debug - Check all conditions for disconnect execution
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      DISCONNECT EXECUTION DEBUG:
+      ===================================================
+      Variables:
+      - dry_run: {{ dry_run }}
+      - disconnect: {{ disconnect }}
+      
+      VM Counts:
+      - vms_with_cd_media: {{ vms_with_cd_media | length }}
+      - vms_eligible_for_disconnect: {{ vms_eligible_for_disconnect | length }}
+      - hot_removable_devices: {{ hot_removable_devices | length }}
+      
+      {% if vms_eligible_for_disconnect | length > 0 %}
+      Eligible VMs Details:
+      {% for vm in vms_eligible_for_disconnect %}
+      VM: {{ vm.vm_name }}
+      - Total CD devices: {{ vm.cd_devices | length }}
+      - Hot removable devices: {{ vm.cd_devices | selectattr('hot_removable', 'equalto', true) | list | length }}
+      - Device details:
+      {% for cd in vm.cd_devices %}
+        * {{ cd.device_label }}: hot_removable={{ cd.hot_removable }}, controller={{ cd.controller_type }}
+      {% endfor %}
+      {% endfor %}
+      {% endif %}
+      
+      Conditions for session token:
+      - not dry_run: {{ not (dry_run | bool) }}
+      - hot_removable_devices > 0: {{ hot_removable_devices | length > 0 }}
+      - Combined: {{ not (dry_run | bool) and hot_removable_devices | length > 0 }}
+      ===================================================
+
+- name: Debug - Show which devices should be processed
+  ansible.builtin.debug:
+    msg: |
+      Device will be processed:
+      VM: {{ item.0.vm_name }}
+      Device: {{ item.1.device_label }}
+      Hot removable: {{ item.1.hot_removable }}
+      Conditions:
+      - not dry_run: {{ not (dry_run | bool) }}
+      - hot_removable: {{ item.1.hot_removable | bool }}
+      - Combined: {{ not (dry_run | bool) and item.1.hot_removable | bool }}
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+  when: 
+    - vms_eligible_for_disconnect | length > 0
+
 - name: Get VM session token for REST API
   ansible.builtin.uri:
     url: "https://{{ inventory_hostname }}/rest/com/vmware/cis/session"
@@ -327,6 +380,42 @@
   when: 
     - not (dry_run | bool)
     - hot_removable_devices | length > 0
+
+- name: Debug session token result
+  ansible.builtin.debug:
+    msg: |
+      Session Token Debug:
+      - Task executed: {{ session_token is defined }}
+      - Status code: {{ session_token.status_code | default('N/A') }}
+      - Has JSON: {{ session_token.json is defined if session_token is defined else 'N/A' }}
+      - Token value: {{ session_token.json.value | default('N/A') if (session_token is defined and session_token.json is defined) else 'N/A' }}
+  when: 
+    - not (dry_run | bool)
+    - session_token is defined
+
+- name: Debug - About to execute REST API call
+  ansible.builtin.debug:
+    msg: |
+      REST API Call Debug:
+      VM: {{ item.0.vm_name }}
+      Device: {{ item.1.device_label }}
+      UUID: {{ item.0.uuid }}
+      Device Key: {{ item.1.device_key }}
+      URL: https://{{ inventory_hostname }}/rest/vcenter/vm/{{ item.0.uuid }}/hardware/cdrom/{{ item.1.device_key }}
+      
+      Conditions:
+      - not dry_run: {{ not (dry_run | bool) }}
+      - hot_removable: {{ item.1.hot_removable | bool }}
+      - session_token defined: {{ session_token is defined }}
+      - session_token.json defined: {{ session_token.json is defined if session_token is defined else false }}
+      - All conditions met: {{ not (dry_run | bool) and item.1.hot_removable | bool and session_token is defined and session_token.json is defined }}
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+  when: 
+    - vms_eligible_for_disconnect | length > 0
 
 - name: Disconnect CD media using VMware REST API
   ansible.builtin.uri:
