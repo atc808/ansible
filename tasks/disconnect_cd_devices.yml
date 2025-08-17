@@ -1,11 +1,13 @@
 ---
-# Alternative: Remove CD drives entirely using state: absent
+# Enhanced: Remove CD drives with media, then add clean CD drives without media
 
 - name: Initialize disconnect variables
   ansible.builtin.set_fact:
     vms_eligible_for_disconnect: []
-    successful_disconnects: []
-    failed_disconnects: []
+    successful_removals: []
+    failed_removals: []
+    successful_additions: []
+    failed_additions: []
 
 - name: Filter VMs for disconnect operations
   ansible.builtin.set_fact:
@@ -26,21 +28,21 @@
       VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
       Force disconnect enabled: {{ force_disconnect | default(true) }}
       
-      CD drives that would be REMOVED entirely:
+      Operation Plan:
       {% for vm in vms_eligible_for_disconnect %}
       VM: {{ vm.vm_name }}
       {% for cd in vm.cd_devices %}
-      - Device: {{ cd.device_label }} (Key: {{ cd.device_key }})
+      - STEP 1: Remove {{ cd.device_label }} (Key: {{ cd.device_key }})
         Media: {{ cd.media_path }}
         Controller: {{ cd.controller_type }}
-        Action: REMOVE ENTIRE DRIVE
+      - STEP 2: Add new clean {{ cd.controller_type }} CD drive without media
       {% endfor %}
       {% endfor %}
       ===================================================
   when: dry_run | bool
 
-# Remove CD drives entirely using state: absent
-- name: Remove CD drives entirely from VMs
+# STEP 1: Remove existing CD drives with media
+- name: Step 1 - Remove CD drives with connected media
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
     username: "{{ vcenter_username }}"
@@ -58,69 +60,177 @@
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
   loop_control:
-    label: "{{ item.0.vm_name }} - {{ item.1.device_label }}"
+    label: "{{ item.0.vm_name }} - Remove {{ item.1.device_label }}"
   delegate_to: localhost
   when: 
     - not (dry_run | bool)
-  register: disconnect_results
+  register: removal_results
   failed_when: false
   retries: 3
   delay: 5
 
-- name: Categorize disconnect results
+- name: Categorize removal results
   ansible.builtin.set_fact:
-    successful_disconnects: >-
+    successful_removals: >-
       {{
-        disconnect_results.results | default([]) |
+        removal_results.results | default([]) |
         selectattr('changed', 'equalto', true) |
         list
       }}
-    failed_disconnects: >-
+    failed_removals: >-
       {{
-        disconnect_results.results | default([]) |
+        removal_results.results | default([]) |
         selectattr('failed', 'defined') |
         selectattr('failed', 'equalto', true) |
         list
       }}
   when: 
     - not (dry_run | bool)
-    - disconnect_results is defined
+    - removal_results is defined
 
+# Brief pause to allow ESXi to process the removals
+- name: Pause to allow CD drive removal to complete
+  ansible.builtin.pause:
+    seconds: 5
+  when: 
+    - not (dry_run | bool)
+    - successful_removals | length > 0
+
+# STEP 2: Add new clean CD drives without media
+- name: Step 2 - Add new clean CD drives without media
+  community.vmware.vmware_guest:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    uuid: "{{ item.item.0.uuid }}"
+    force: "{{ force_disconnect | default(true) }}"
+    state: present
+    cdrom:
+      - controller_type: "{{ 'ide' if item.item.1.controller_type == 'IDE' else 'sata' }}"
+        controller_number: "{{ 0 if item.item.1.controller_type == 'IDE' else 0 }}"
+        unit_number: "{{ 0 if item.item.1.controller_type == 'IDE' else 0 }}"
+        type: none
+        state: present
+  loop: "{{ successful_removals | default([]) }}"
+  loop_control:
+    label: "{{ item.item.0.vm_name }} - Add clean {{ item.item.1.controller_type }} CD drive"
+  delegate_to: localhost
+  when: 
+    - not (dry_run | bool)
+    - successful_removals | length > 0
+  register: addition_results
+  failed_when: false
+  retries: 3
+  delay: 5
+
+- name: Categorize addition results
+  ansible.builtin.set_fact:
+    successful_additions: >-
+      {{
+        addition_results.results | default([]) |
+        selectattr('changed', 'equalto', true) |
+        list
+      }}
+    failed_additions: >-
+      {{
+        addition_results.results | default([]) |
+        selectattr('failed', 'defined') |
+        selectattr('failed', 'equalto', true) |
+        list
+      }}
+  when: 
+    - not (dry_run | bool)
+    - addition_results is defined
+
+# REPORTING SECTION
 - name: Report successful CD drive removals
   ansible.builtin.debug:
     msg: |
       ===================================================
-      SUCCESSFUL CD DRIVE REMOVAL:
+      STEP 1 SUCCESS - CD DRIVE REMOVAL:
       ===================================================
       VM: {{ item.item.0.vm_name }}
-      Device: {{ item.item.1.device_label }}
+      Removed Device: {{ item.item.1.device_label }}
       Original Device Key: {{ item.item.1.device_key }}
-      Media: {{ item.item.1.media_path }}
+      Removed Media: {{ item.item.1.media_path }}
       Controller Type: {{ item.item.1.controller_type }}
-      Result: CD/DVD drive completely removed from VM
-      Force Used: {{ force_disconnect | default(true) }}
+      Result: CD/DVD drive with media completely removed
       ===================================================
-  loop: "{{ successful_disconnects | default([]) }}"
+  loop: "{{ successful_removals | default([]) }}"
   when: 
     - not (dry_run | bool)
-    - successful_disconnects | length > 0
+    - successful_removals | length > 0
+
+- name: Report successful clean CD drive additions
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      STEP 2 SUCCESS - CLEAN CD DRIVE ADDED:
+      ===================================================
+      VM: {{ item.item.item.0.vm_name }}
+      Added: Clean {{ item.item.item.1.controller_type }} CD/DVD drive
+      Type: none (no media attached)
+      Controller: {{ 'IDE' if item.item.item.1.controller_type == 'IDE' else 'SATA' }} 0, Unit 0
+      Result: Ready for future media mounting without conflicts
+      ===================================================
+  loop: "{{ successful_additions | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - successful_additions | length > 0
 
 - name: Report failed CD drive removals
   ansible.builtin.debug:
     msg: |
       ===================================================
-      CD DRIVE REMOVAL FAILED:
+      STEP 1 FAILED - CD DRIVE REMOVAL:
       ===================================================
       VM: {{ item.item.0.vm_name }}
       Device: {{ item.item.1.device_label }}
-      Original Device Key: {{ item.item.1.device_key }}
       Media: {{ item.item.1.media_path }}
       Controller Type: {{ item.item.1.controller_type }}
       Error: {{ item.msg | default('Unknown error') }}
       
       Manual intervention required via vSphere Client.
       ===================================================
-  loop: "{{ failed_disconnects | default([]) }}"
+  loop: "{{ failed_removals | default([]) }}"
   when: 
     - not (dry_run | bool)
-    - failed_disconnects | length > 0
+    - failed_removals | length > 0
+
+- name: Report failed clean CD drive additions
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      STEP 2 FAILED - CLEAN CD DRIVE ADDITION:
+      ===================================================
+      VM: {{ item.item.item.0.vm_name }}
+      Controller Type: {{ item.item.item.1.controller_type }}
+      Error: {{ item.msg | default('Unknown error') }}
+      
+      Note: Original drive was removed but clean replacement failed.
+      Manually add CD drive via vSphere Client if needed.
+      ===================================================
+  loop: "{{ failed_additions | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - failed_additions | length > 0
+
+- name: Display operation summary
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      OPERATION SUMMARY:
+      ===================================================
+      Total VMs processed: {{ vms_eligible_for_disconnect | length }}
+      Step 1 (Removals):
+      - Successful: {{ successful_removals | length }}
+      - Failed: {{ failed_removals | length }}
+      
+      Step 2 (Clean Additions):
+      - Successful: {{ successful_additions | length }}
+      - Failed: {{ failed_additions | length }}
+      
+      Net Result: {{ successful_additions | length }} VMs now have clean CD drives
+      ===================================================
+  when: not (dry_run | bool)
