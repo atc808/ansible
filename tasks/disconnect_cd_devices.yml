@@ -386,12 +386,19 @@
     msg: |
       Session Token Debug:
       - Task executed: {{ session_token is defined }}
+      {% if session_token is defined %}
       - Status code: {{ session_token.status_code | default('N/A') }}
-      - Has JSON: {{ session_token.json is defined if session_token is defined else 'N/A' }}
-      - Token value: {{ session_token.json.value | default('N/A') if (session_token is defined and session_token.json is defined) else 'N/A' }}
+      - Has JSON: {{ session_token.json is defined }}
+      {% if session_token.json is defined %}
+      - Token value: {{ session_token.json.value | default('N/A') }}
+      {% else %}
+      - Token value: No JSON response
+      {% endif %}
+      {% else %}
+      - Session token task was not executed
+      {% endif %}
   when: 
     - not (dry_run | bool)
-    - session_token is defined
 
 - name: Debug - About to execute REST API call
   ansible.builtin.debug:
@@ -407,8 +414,9 @@
       - not dry_run: {{ not (dry_run | bool) }}
       - hot_removable: {{ item.1.hot_removable | bool }}
       - session_token defined: {{ session_token is defined }}
-      - session_token.json defined: {{ session_token.json is defined if session_token is defined else false }}
-      - All conditions met: {{ not (dry_run | bool) and item.1.hot_removable | bool and session_token is defined and session_token.json is defined }}
+      {% if session_token is defined %}
+      - session_token.json defined: {{ session_token.json is defined }}
+      {% endif %}
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
