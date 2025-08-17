@@ -8,7 +8,7 @@
         selectattr('cd_devices', 'defined') |
         list
       }}
-
+#
 - name: Calculate disconnect statistics
   ansible.builtin.set_fact:
     all_cd_devices: >-
