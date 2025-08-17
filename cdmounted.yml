@@ -68,6 +68,7 @@
       ansible.builtin.include_tasks: tasks/disconnect_cd_devices.yml
       when: 
         - disconnect | bool
+        - vms_with_cd_media is defined
         - vms_with_cd_media | length > 0
 
     - name: Display operation summary
