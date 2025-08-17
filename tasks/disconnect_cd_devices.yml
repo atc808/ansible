@@ -84,6 +84,21 @@
   delay: 5
 
 # STRATEGY 2: For SATA drives or powered-off VMs, remove and replace drives
+- name: Debug - Show what will be processed for removal
+  ansible.builtin.debug:
+    msg: |
+      VM: {{ item.0.vm_name }}
+      Power State: {{ item.0.power_state }}
+      Device: {{ item.1.device_label }}
+      Controller Type: {{ item.1.controller_type }}
+      Controller Number: {{ item.1.controller_number }}
+      Unit Number: {{ item.1.unit_number }}
+      Will Process: {{ not (item.1.controller_type == 'IDE' and item.0.power_state == 'poweredOn') }}
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  when: not (dry_run | bool)
+
 - name: Strategy 2 - Remove CD drives (SATA or powered-off VMs only)
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
