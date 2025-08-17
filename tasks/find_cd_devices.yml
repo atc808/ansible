@@ -25,11 +25,11 @@
           'controller_number': (
             0 if (device.key | default(0) | int) < 3002
             else 1 if (device.key | default(0) | int) < 15000  
-            else (((device.key | default(0) | int) - 15000) // 30)
+            else (((device.key | default(0) | int) - 15000) // 1000)
           ),
           'unit_number': (
             (device.key | default(0) | int) % 2 if (device.key | default(0) | int) < 15000
-            else (((device.key | default(0) | int) - 15000) % 30)
+            else (((device.key | default(0) | int) - 15000) % 1000) % 30
           ),
           'media_type': (
             'ISO File' if (device.backing is defined and device.backing.fileName is defined)
