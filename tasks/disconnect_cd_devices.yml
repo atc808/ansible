@@ -1,5 +1,5 @@
 ---
-# Correct disconnect_cd_devices.yml using proper vmware_guest cdrom parameter
+# Alternative: Remove CD drives entirely using state: absent
 
 - name: Initialize disconnect variables
   ansible.builtin.set_fact:
@@ -26,22 +26,21 @@
       VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
       Force disconnect enabled: {{ force_disconnect | default(true) }}
       
-      CD devices that would be disconnected:
+      CD drives that would be REMOVED entirely:
       {% for vm in vms_eligible_for_disconnect %}
       VM: {{ vm.vm_name }}
       {% for cd in vm.cd_devices %}
       - Device: {{ cd.device_label }} (Key: {{ cd.device_key }})
         Media: {{ cd.media_path }}
         Controller: {{ cd.controller_type }}
-        Original Controller/Unit: {{ cd.controller_number }}/{{ cd.unit_number }}
-        Will use: Controller {{ 0 if cd.controller_type == 'IDE' else 0 }}, Unit {{ 0 if cd.controller_type == 'IDE' else 0 }}
+        Action: REMOVE ENTIRE DRIVE
       {% endfor %}
       {% endfor %}
       ===================================================
   when: dry_run | bool
 
-# Disconnect CD devices by setting type to 'none'
-- name: Disconnect CD devices using vmware_guest cdrom parameter
+# Remove CD drives entirely using state: absent
+- name: Remove CD drives entirely from VMs
   community.vmware.vmware_guest:
     hostname: "{{ inventory_hostname }}"
     username: "{{ vcenter_username }}"
@@ -54,8 +53,7 @@
       - controller_type: "{{ 'ide' if item.1.controller_type == 'IDE' else 'sata' }}"
         controller_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
         unit_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
-        type: none
-        state: present
+        state: absent
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
@@ -88,18 +86,18 @@
     - not (dry_run | bool)
     - disconnect_results is defined
 
-- name: Report successful disconnections
+- name: Report successful CD drive removals
   ansible.builtin.debug:
     msg: |
       ===================================================
-      SUCCESSFUL DISCONNECTION:
+      SUCCESSFUL CD DRIVE REMOVAL:
       ===================================================
       VM: {{ item.item.0.vm_name }}
       Device: {{ item.item.1.device_label }}
       Original Device Key: {{ item.item.1.device_key }}
       Media: {{ item.item.1.media_path }}
       Controller Type: {{ item.item.1.controller_type }}
-      Result: CD media disconnected (type set to 'none')
+      Result: CD/DVD drive completely removed from VM
       Force Used: {{ force_disconnect | default(true) }}
       ===================================================
   loop: "{{ successful_disconnects | default([]) }}"
@@ -107,11 +105,11 @@
     - not (dry_run | bool)
     - successful_disconnects | length > 0
 
-- name: Report failed disconnections
+- name: Report failed CD drive removals
   ansible.builtin.debug:
     msg: |
       ===================================================
-      DISCONNECTION FAILED:
+      CD DRIVE REMOVAL FAILED:
       ===================================================
       VM: {{ item.item.0.vm_name }}
       Device: {{ item.item.1.device_label }}
@@ -120,7 +118,7 @@
       Controller Type: {{ item.item.1.controller_type }}
       Error: {{ item.msg | default('Unknown error') }}
       
-      This may require manual intervention via vSphere Client.
+      Manual intervention required via vSphere Client.
       ===================================================
   loop: "{{ failed_disconnects | default([]) }}"
   when: 
