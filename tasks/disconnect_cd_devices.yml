@@ -34,7 +34,7 @@
       {% for cd in vm.cd_devices %}
       - STEP 1: Remove {{ cd.device_label }} (Key: {{ cd.device_key }})
         Media: {{ cd.media_path }}
-        Controller: {{ cd.controller_type }}
+        Controller: {{ cd.controller_type }} {{ cd.controller_number }}, Unit {{ cd.unit_number }}
       - STEP 2: Add new clean {{ cd.controller_type }} CD drive without media
       {% endfor %}
       {% endfor %}
@@ -53,14 +53,14 @@
     state: present
     cdrom:
       - controller_type: "{{ 'ide' if item.1.controller_type == 'IDE' else 'sata' }}"
-        controller_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
-        unit_number: "{{ 0 if item.1.controller_type == 'IDE' else 0 }}"
+        controller_number: "{{ item.1.controller_number }}"
+        unit_number: "{{ item.1.unit_number }}"
         state: absent
   with_subelements:
     - "{{ vms_eligible_for_disconnect }}"
     - cd_devices
   loop_control:
-    label: "{{ item.0.vm_name }} - Remove {{ item.1.device_label }}"
+    label: "{{ item.0.vm_name }} - Remove {{ item.1.device_label }} ({{ item.1.controller_type }} {{ item.1.controller_number }}/{{ item.1.unit_number }})"
   delegate_to: localhost
   when: 
     - not (dry_run | bool)
@@ -108,13 +108,13 @@
     state: present
     cdrom:
       - controller_type: "{{ 'ide' if item.item.1.controller_type == 'IDE' else 'sata' }}"
-        controller_number: "{{ 0 if item.item.1.controller_type == 'IDE' else 0 }}"
-        unit_number: "{{ 0 if item.item.1.controller_type == 'IDE' else 0 }}"
+        controller_number: "{{ item.item.1.controller_number }}"
+        unit_number: "{{ item.item.1.unit_number }}"
         type: none
         state: present
   loop: "{{ successful_removals | default([]) }}"
   loop_control:
-    label: "{{ item.item.0.vm_name }} - Add clean {{ item.item.1.controller_type }} CD drive"
+    label: "{{ item.item.0.vm_name }} - Add clean {{ item.item.1.controller_type }} CD drive ({{ item.item.1.controller_number }}/{{ item.item.1.unit_number }})"
   delegate_to: localhost
   when: 
     - not (dry_run | bool)
@@ -154,7 +154,7 @@
       Removed Device: {{ item.item.1.device_label }}
       Original Device Key: {{ item.item.1.device_key }}
       Removed Media: {{ item.item.1.media_path }}
-      Controller Type: {{ item.item.1.controller_type }}
+      Controller: {{ item.item.1.controller_type }} {{ item.item.1.controller_number }}, Unit {{ item.item.1.unit_number }}
       Result: CD/DVD drive with media completely removed
       ===================================================
   loop: "{{ successful_removals | default([]) }}"
@@ -171,7 +171,7 @@
       VM: {{ item.item.item.0.vm_name }}
       Added: Clean {{ item.item.item.1.controller_type }} CD/DVD drive
       Type: none (no media attached)
-      Controller: {{ 'IDE' if item.item.item.1.controller_type == 'IDE' else 'SATA' }} 0, Unit 0
+      Controller: {{ item.item.item.1.controller_type }} {{ item.item.item.1.controller_number }}, Unit {{ item.item.item.1.unit_number }}
       Result: Ready for future media mounting without conflicts
       ===================================================
   loop: "{{ successful_additions | default([]) }}"
@@ -188,7 +188,7 @@
       VM: {{ item.item.0.vm_name }}
       Device: {{ item.item.1.device_label }}
       Media: {{ item.item.1.media_path }}
-      Controller Type: {{ item.item.1.controller_type }}
+      Controller: {{ item.item.1.controller_type }} {{ item.item.1.controller_number }}, Unit {{ item.item.1.unit_number }}
       Error: {{ item.msg | default('Unknown error') }}
       
       Manual intervention required via vSphere Client.
@@ -205,7 +205,7 @@
       STEP 2 FAILED - CLEAN CD DRIVE ADDITION:
       ===================================================
       VM: {{ item.item.item.0.vm_name }}
-      Controller Type: {{ item.item.item.1.controller_type }}
+      Controller: {{ item.item.item.1.controller_type }} {{ item.item.item.1.controller_number }}, Unit {{ item.item.item.1.unit_number }}
       Error: {{ item.msg | default('Unknown error') }}
       
       Note: Original drive was removed but clean replacement failed.

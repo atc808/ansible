@@ -1,5 +1,5 @@
 ---
-# Fixed find_cd_devices.yml with corrected hot_removable detection
+# Fixed find_cd_devices.yml with corrected controller/unit number calculation
 
 - name: Initialize CD devices list for current VM
   ansible.builtin.set_fact:
@@ -23,13 +23,18 @@
           'controller_type': 'IDE' if (device.key | default(0) | int) < 15000 else 'SATA',
           'hot_removable': true,
           'controller_number': (
-            0 if (device.key | default(0) | int) < 3002
-            else 1 if (device.key | default(0) | int) < 15000  
-            else (((device.key | default(0) | int) - 15000) // 1000)
+            0 if (device.key | default(0) | int) == 3000
+            else 1 if (device.key | default(0) | int) == 3001
+            else 0 if (device.key | default(0) | int) == 3002
+            else 1 if (device.key | default(0) | int) == 3003
+            else (((device.key | default(0) | int) - 15000) // 1000) if (device.key | default(0) | int) >= 15000
+            else 0
           ),
           'unit_number': (
-            (device.key | default(0) | int) % 2 if (device.key | default(0) | int) < 15000
-            else (((device.key | default(0) | int) - 15000) % 1000) % 30
+            0 if (device.key | default(0) | int) in [3000, 3002]
+            else 1 if (device.key | default(0) | int) in [3001, 3003]
+            else (((device.key | default(0) | int) - 15000) % 1000) % 30 if (device.key | default(0) | int) >= 15000
+            else 0
           ),
           'media_type': (
             'ISO File' if (device.backing is defined and device.backing.fileName is defined)
@@ -61,7 +66,7 @@
       Found {{ current_vm_cd_devices | length }} connected CD devices for VM: {{ vm_item.guest_name }}
       {% for cd in current_vm_cd_devices %}
       - {{ cd.device_label }}: {{ cd.media_type }} ({{ cd.media_path }})
-        Device Key: {{ cd.device_key }}, Controller: {{ cd.controller_type }}, Hot-Removable: {{ cd.hot_removable }}
+        Device Key: {{ cd.device_key }}, Controller: {{ cd.controller_type }} {{ cd.controller_number }}, Unit: {{ cd.unit_number }}
       {% endfor %}
   when: 
     - vm_index == 0
