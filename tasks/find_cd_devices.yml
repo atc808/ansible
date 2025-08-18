@@ -53,41 +53,29 @@
           'device_label': device.deviceInfo.label,
           'device_key': device.key | default('N/A'),
           'connected': device.connectable.connected | default(false),
-          
-          # Controller type determination based on device key ranges
           'controller_type': 'IDE' if (device.key | default(0) | int) < 15000 else 'SATA',
-          
-          # All CD/DVD drives support hot removal in VMware (though IDE has limitations on powered VMs)
           'hot_removable': true,
-          
-          # Controller number mapping - critical for removal operations
           'controller_number': (
-            0 if (device.key | default(0) | int) == 3000                           # IDE Controller 0, Unit 0
-            else 1 if (device.key | default(0) | int) == 3001                      # IDE Controller 0, Unit 1
-            else 0 if (device.key | default(0) | int) == 3002                      # IDE Controller 1, Unit 0
-            else 1 if (device.key | default(0) | int) == 3003                      # IDE Controller 1, Unit 1
-            else 0 if (device.key | default(0) | int) in [15000, 16000]            # SATA Controller 0
-            else 1 if (device.key | default(0) | int) in [15001, 16001]            # SATA Controller 1
+            0 if (device.key | default(0) | int) == 3000
+            else 1 if (device.key | default(0) | int) == 3001
+            else 0 if (device.key | default(0) | int) == 3002
+            else 1 if (device.key | default(0) | int) == 3003
+            else 0 if (device.key | default(0) | int) in [15000, 16000]
+            else 1 if (device.key | default(0) | int) in [15001, 16001]
             else (((device.key | default(0) | int) - 15000) // 1000) if (device.key | default(0) | int) >= 15000
             else 0
           ),
-          
-          # Unit number mapping within each controller
           'unit_number': (
-            0 if (device.key | default(0) | int) in [3000, 3002, 15000, 16000]    # Unit 0 mappings
-            else 1 if (device.key | default(0) | int) in [3001, 3003, 15001, 16001] # Unit 1 mappings
+            0 if (device.key | default(0) | int) in [3000, 3002, 15000, 16000]
+            else 1 if (device.key | default(0) | int) in [3001, 3003, 15001, 16001]
             else (((device.key | default(0) | int) - 15000) % 1000) % 30 if (device.key | default(0) | int) >= 15000
             else 0
           ),
-          
-          # Media type identification
           'media_type': (
             'ISO File' if (device.backing is defined and device.backing.fileName is defined)
             else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined)
             else 'Connected (no media details)'
           ),
-          
-          # Extract media path (ISO file path or physical device name)
           'media_path': (
             device.backing.fileName | default(device.backing.deviceName | default('N/A'))
             if device.backing is defined
