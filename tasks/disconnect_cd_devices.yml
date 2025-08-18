@@ -152,8 +152,11 @@
     successful_removals: >-
       {{
         removal_results.results | default([]) |
-        rejectattr('failed', 'defined') |
-        rejectattr('failed', 'equalto', true) |
+        selectattr('failed', 'undefined') |
+        list +
+        removal_results.results | default([]) |
+        selectattr('failed', 'defined') |
+        selectattr('failed', 'equalto', false) |
         list
       }}
     failed_removals: >-
