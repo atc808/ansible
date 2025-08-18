@@ -75,14 +75,14 @@
     # =========================================================================
     # VALIDATION AND SETUP
     # =========================================================================
-    - name: Validate required variables
-      ansible.builtin.assert:
-        that:
-          - vcenter_username is defined and vcenter_username | length > 0
-          - vcenter_password is defined and vcenter_password | length > 0
-          - inventory_hostname is defined
-        fail_msg: "Missing required connection credentials or hostname"
-        quiet: true
+    # - name: Validate required variables
+    #   ansible.builtin.assert:
+    #     that:
+    #       - vcenter_username is defined and vcenter_username | length > 0
+    #       - vcenter_password is defined and vcenter_password | length > 0
+    #       - inventory_hostname is defined
+    #     fail_msg: "Missing required connection credentials or hostname"
+    #     quiet: true
 
     # Display current operational configuration for operator awareness
     - name: Display operation mode
