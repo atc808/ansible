@@ -34,9 +34,14 @@
     # CREDENTIAL CONFIGURATION
     # =========================================================================
     # AAP credential variables - these will be injected by AAP
-    vcenter_username: "{{ ansible_user }}"
-    vcenter_password: "{{ ansible_password }}"
+   # vcenter_username: "{{ ansible_user }}"
+   # vcenter_password: "{{ ansible_password }}"
     
+    vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"
+    vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+
+
     # =========================================================================
     # OPERATION CONTROL VARIABLES
     # =========================================================================
@@ -45,11 +50,11 @@
     
     # Dry run mode - when true, shows what would be done without executing
     # Useful for planning and validation before making actual changes
-    dry_run: false
+    dry_run: "{{ is_dry }}" #false
     
     # Force disconnect bypasses guest OS CD locks (resolves dialog issue)
     # This is critical for automated operations to prevent hanging on user prompts
-    force_disconnect: true
+    force_disconnect: "{{ force_disconnect }}" #true
     
     # =========================================================================
     # VM PROTECTION CONFIGURATION
