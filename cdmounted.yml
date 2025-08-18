@@ -10,10 +10,10 @@
     
     # Control variables
     disconnect: true
-    dry_run: false  # Set to true to see what would be disconnected without making changes
+    dry_run: "{{ is_dry }}"  # false  # Set to true to see what would be disconnected without making changes:  -  moved to aap proj variable -
     
     # Force disconnect bypasses guest OS CD locks (resolves dialog issue)
-    force_disconnect: true
+    force_disconnect: "{{ force_disconnect }}" # true  -  moved to aap proj variable -
     
     # VM blacklist - VMs to exclude from disconnect operations (case-sensitive)
     vm_blacklist: []
