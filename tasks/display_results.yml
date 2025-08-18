@@ -1,4 +1,29 @@
 ---
+# ===============================================================================
+# RESULTS DISPLAY MODULE
+# ===============================================================================
+# Purpose: Present detailed information about VMs with connected CD/DVD devices
+#
+# This module provides comprehensive output showing all VMs that have CD/DVD
+# drives with connected media. It formats the information in a clear, readable
+# way that helps operators understand what will be affected by disconnect operations.
+#
+# Key Functions:
+# - Displays VM identification information (name, power state, etc.)
+# - Shows detailed CD/DVD device configurations
+# - Indicates blacklist status for each VM
+# - Provides media type and path information
+# - Shows controller/unit mappings for technical reference
+#
+# Output Format:
+# - One section per VM with connected CD devices
+# - Hierarchical display: VM info -> device details
+# - Technical details included for troubleshooting
+# - Clear separation between VMs for readability
+# ===============================================================================
+
+# Display comprehensive information for each VM with connected CD devices
+# This provides full visibility into what the disconnect operation will affect
 - name: Display VMs with connected CD devices
   ansible.builtin.debug:
     msg: |

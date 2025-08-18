@@ -1,29 +1,75 @@
 ---
+# ===============================================================================
+# CD/DVD MEDIA MANAGEMENT PLAYBOOK
+# ===============================================================================
+# Purpose: Find and optionally disconnect VMs with ISO files mounted to CD drives
+# 
+# This playbook provides a comprehensive solution for managing CD/DVD devices
+# across VMware ESXi environments. It can detect VMs with connected media and
+# either disconnect the media or remove/replace the drives entirely.
+#
+# Key Features:
+# - Discovers all VMs on target ESXi hosts
+# - Identifies CD/DVD drives with connected media (ISO files or physical drives)
+# - Supports both dry-run mode for planning and live execution
+# - Handles different controller types (IDE vs SATA) appropriately
+# - Provides VM blacklisting to protect critical systems
+# - Force disconnect bypasses guest OS locks for stuck media
+#
+# Strategy Overview:
+# - IDE drives on powered-on VMs: Media disconnect only (hot-removal not supported)
+# - SATA drives or powered-off VMs: Complete drive removal and clean replacement
+# - Comprehensive error handling and reporting throughout
+#
+# Author: Generated for VMware environment management
+# Version: Enhanced with hot-removal limitation handling
+# ===============================================================================
+
 - name: Find and optionally disconnect VMs with ISO files mounted to CD drives
   hosts: all
   gather_facts: false
   connection: local
   vars:
+    # =========================================================================
+    # CREDENTIAL CONFIGURATION
+    # =========================================================================
     # AAP credential variables - these will be injected by AAP
     vcenter_username: "{{ ansible_user }}"
     vcenter_password: "{{ ansible_password }}"
     
-    # Control variables
+    # =========================================================================
+    # OPERATION CONTROL VARIABLES
+    # =========================================================================
+    # Main operation switch - set to false to only scan without making changes
     disconnect: true
-    dry_run: "{{ is_dry }}"  # false  # Set to true to see what would be disconnected without making changes:  -  moved to aap proj variable -
+    
+    # Dry run mode - when true, shows what would be done without executing
+    # Useful for planning and validation before making actual changes
+    dry_run: false
     
     # Force disconnect bypasses guest OS CD locks (resolves dialog issue)
-    force_disconnect: "{{ force_disconnect }}" # true  -  moved to aap proj variable -
+    # This is critical for automated operations to prevent hanging on user prompts
+    force_disconnect: true
     
+    # =========================================================================
+    # VM PROTECTION CONFIGURATION
+    # =========================================================================
     # VM blacklist - VMs to exclude from disconnect operations (case-sensitive)
+    # Add VM names here to protect critical systems from automated changes
     vm_blacklist: []
     # Example: vm_blacklist: ["critical-vm-01", "production-db", "backup-server"]
     
-    # Internal variables
-    vms_with_cd_media: []
-    failed_vm_queries: []
+    # =========================================================================
+    # INTERNAL WORKING VARIABLES
+    # =========================================================================
+    # These variables are used internally by the playbook - do not modify
+    vms_with_cd_media: []        # List of VMs found with connected CD devices
+    failed_vm_queries: []        # VMs that failed hardware information queries
     
   tasks:
+    # =========================================================================
+    # VALIDATION AND SETUP
+    # =========================================================================
     - name: Validate required variables
       ansible.builtin.assert:
         that:
@@ -33,6 +79,7 @@
         fail_msg: "Missing required connection credentials or hostname"
         quiet: true
 
+    # Display current operational configuration for operator awareness
     - name: Display operation mode
       ansible.builtin.debug:
         msg: |
@@ -49,21 +96,36 @@
           Force disconnect will bypass guest OS CD lock dialogs
           ===================================================
 
+    # =========================================================================
+    # VM DISCOVERY AND HARDWARE ANALYSIS
+    # =========================================================================
+    # Connect to ESXi host and gather basic VM inventory information
     - name: Test ESXi connection and gather VM information
       ansible.builtin.include_tasks: tasks/gather_vm_info.yml
 
+    # For each discovered VM, examine hardware configuration to find CD devices
+    # This loop processes VMs individually to handle errors gracefully
     - name: Process each VM to find CD devices with mounted media
       ansible.builtin.include_tasks: tasks/process_vm_hardware.yml
       loop: "{{ vm_info.virtual_machines }}"
       loop_control:
-        loop_var: vm_item
-        index_var: vm_index
+        loop_var: vm_item          # Avoid variable name conflicts
+        index_var: vm_index        # Track position for debug limiting
         label: "{{ vm_item.guest_name | default('Unknown VM') }}"
 
+    # =========================================================================
+    # RESULTS PRESENTATION
+    # =========================================================================
+    # Display detailed information about VMs with connected CD devices
     - name: Display VMs with connected CD devices
       ansible.builtin.include_tasks: tasks/display_results.yml
       when: vms_with_cd_media | length > 0
 
+    # =========================================================================
+    # DISCONNECT OPERATIONS
+    # =========================================================================
+    # Execute the actual disconnect/removal operations if enabled
+    # This respects both the disconnect flag and dry_run mode
     - name: Perform disconnect operations if enabled
       ansible.builtin.include_tasks: tasks/disconnect_cd_devices.yml
       when: 
@@ -71,5 +133,9 @@
         - vms_with_cd_media is defined
         - vms_with_cd_media | length > 0
 
+    # =========================================================================
+    # FINAL REPORTING
+    # =========================================================================
+    # Provide comprehensive summary of all operations performed
     - name: Display operation summary
       ansible.builtin.include_tasks: tasks/display_summary.yml

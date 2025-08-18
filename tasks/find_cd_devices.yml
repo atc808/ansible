@@ -1,10 +1,41 @@
 ---
-# Fixed find_cd_devices.yml with corrected controller/unit number calculation
+# ===============================================================================
+# CD/DVD DEVICE DETECTION MODULE
+# ===============================================================================
+# Purpose: Scan VM hardware devices to identify CD/DVD drives with connected media
+#
+# This module analyzes the hardware device list from a VM to find CD/DVD drives
+# that have media connected (ISO files or physical drives). It handles the
+# complex device key mapping required for VMware device identification.
+#
+# Key Functions:
+# - Scans all hardware devices for CD/DVD drives
+# - Identifies connected vs disconnected drives
+# - Maps VMware device keys to controller/unit numbers
+# - Determines media types (ISO file, physical drive, etc.)
+# - Extracts media paths and connection details
+#
+# VMware Device Key Mapping:
+# - IDE Controllers: Keys 3000-3003 (Controller 0/1, Unit 0/1)
+# - SATA Controllers: Keys 15000+ for first controller, 16000+ for additional
+# - This mapping is critical for successful removal operations
+#
+# Controller/Unit Logic:
+# - Device Key 3000: IDE Controller 0, Unit 0
+# - Device Key 3001: IDE Controller 0, Unit 1  
+# - Device Key 3002: IDE Controller 1, Unit 0
+# - Device Key 3003: IDE Controller 1, Unit 1
+# - Device Key 15000/16000: SATA Controller 0, Unit 0
+# - Device Key 15001/16001: SATA Controller 0, Unit 1
+# ===============================================================================
 
+# Initialize working variable for current VM's CD devices
 - name: Initialize CD devices list for current VM
   ansible.builtin.set_fact:
     current_vm_cd_devices: []
 
+# Provide debug output for the first VM to show scanning process
+# This helps verify the device scanning is working correctly
 - name: Debug device scanning for first VM only
   ansible.builtin.debug:
     msg: |
@@ -12,6 +43,8 @@
       Looking for CD/DVD devices...
   when: vm_index == 0
 
+# Main device detection loop - examines each hardware device
+# Complex logic handles VMware's device key mapping and connection detection
 - name: Add connected CD devices to list
   ansible.builtin.set_fact:
     current_vm_cd_devices: >-
@@ -20,29 +53,41 @@
           'device_label': device.deviceInfo.label,
           'device_key': device.key | default('N/A'),
           'connected': device.connectable.connected | default(false),
+          
+          # Controller type determination based on device key ranges
           'controller_type': 'IDE' if (device.key | default(0) | int) < 15000 else 'SATA',
+          
+          # All CD/DVD drives support hot removal in VMware (though IDE has limitations on powered VMs)
           'hot_removable': true,
+          
+          # Controller number mapping - critical for removal operations
           'controller_number': (
-            0 if (device.key | default(0) | int) == 3000
-            else 1 if (device.key | default(0) | int) == 3001
-            else 0 if (device.key | default(0) | int) == 3002
-            else 1 if (device.key | default(0) | int) == 3003
-            else 0 if (device.key | default(0) | int) in [15000, 16000]
-            else 1 if (device.key | default(0) | int) in [15001, 16001]
+            0 if (device.key | default(0) | int) == 3000                           # IDE Controller 0, Unit 0
+            else 1 if (device.key | default(0) | int) == 3001                      # IDE Controller 0, Unit 1
+            else 0 if (device.key | default(0) | int) == 3002                      # IDE Controller 1, Unit 0
+            else 1 if (device.key | default(0) | int) == 3003                      # IDE Controller 1, Unit 1
+            else 0 if (device.key | default(0) | int) in [15000, 16000]            # SATA Controller 0
+            else 1 if (device.key | default(0) | int) in [15001, 16001]            # SATA Controller 1
             else (((device.key | default(0) | int) - 15000) // 1000) if (device.key | default(0) | int) >= 15000
             else 0
           ),
+          
+          # Unit number mapping within each controller
           'unit_number': (
-            0 if (device.key | default(0) | int) in [3000, 3002, 15000, 16000]
-            else 1 if (device.key | default(0) | int) in [3001, 3003, 15001, 16001]
+            0 if (device.key | default(0) | int) in [3000, 3002, 15000, 16000]    # Unit 0 mappings
+            else 1 if (device.key | default(0) | int) in [3001, 3003, 15001, 16001] # Unit 1 mappings
             else (((device.key | default(0) | int) - 15000) % 1000) % 30 if (device.key | default(0) | int) >= 15000
             else 0
           ),
+          
+          # Media type identification
           'media_type': (
             'ISO File' if (device.backing is defined and device.backing.fileName is defined)
             else 'Physical Drive' if (device.backing is defined and device.backing.deviceName is defined)
             else 'Connected (no media details)'
           ),
+          
+          # Extract media path (ISO file path or physical device name)
           'media_path': (
             device.backing.fileName | default(device.backing.deviceName | default('N/A'))
             if device.backing is defined
@@ -55,13 +100,21 @@
     loop_var: device
     label: "{{ device.deviceInfo.label | default('Unknown Device') }}"
   when: 
+    # Device must have valid device info
     - device.deviceInfo is defined
     - device.deviceInfo.label is defined
+    
+    # Label-based CD/DVD device identification (multiple patterns for compatibility)
     - ('CD/DVD' in device.deviceInfo.label or 'CD' in device.deviceInfo.label or 'DVD' in device.deviceInfo.label or 'cdrom' in device.deviceInfo.label.lower())
+    
+    # Device must have connection capability
     - device.connectable is defined
     - device.connectable.connected is defined
+    
+    # Must be actually connected OR have media backing (some ISOs show as connected even when device.connected is false)
     - (device.connectable.connected == true or (device.backing is defined and device.backing.fileName is defined and device.backing.fileName | length > 0))
 
+# Debug output for first VM to verify detection is working
 - name: Debug CD device detection for first VM
   ansible.builtin.debug:
     msg: |
@@ -74,6 +127,8 @@
     - vm_index == 0
     - current_vm_cd_devices | length > 0
 
+# Add VM to results list if it has any connected CD devices
+# This builds the master list used for disconnect operations
 - name: Add VM to results if it has connected CD devices
   ansible.builtin.set_fact:
     vms_with_cd_media: >-

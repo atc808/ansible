@@ -1,8 +1,44 @@
 ---
+# ===============================================================================
+# OPERATION SUMMARY MODULE
+# ===============================================================================
+# Purpose: Provide comprehensive final reporting of all playbook operations
+#
+# This module calculates and displays final statistics for the entire playbook
+# execution. It provides a complete overview of what was discovered, what was
+# processed, and what the final results were.
+#
+# Key Functions:
+# - Calculates summary statistics across all operations
+# - Reports on VM discovery and processing counts
+# - Shows blacklist effectiveness
+# - Provides final operation results
+# - Reports any failed operations for follow-up
+#
+# Report Sections:
+# - Operation mode and scope
+# - VM discovery and filtering results
+# - Disconnect operation effectiveness
+# - Failure analysis and recommendations
+#
+# Usage Context:
+# - Always runs at the end of playbook execution
+# - Provides final validation of operations
+# - Helps operators understand what follow-up may be needed
+# ===============================================================================
+
+# Calculate comprehensive summary statistics from all operation results
+# These calculations provide the data for the final summary report
 - name: Calculate summary statistics
   ansible.builtin.set_fact:
+    # Total VMs discovered on the ESXi host
     total_vms_found: "{{ vm_info.virtual_machines | length }}"
+    
+    # VMs that have connected CD devices but are protected by blacklist
     blacklisted_vms: "{{ vms_with_cd_media | selectattr('vm_name', 'in', vm_blacklist) | list }}"
+    
+    # Successful disconnect operations (legacy compatibility calculation)
+    # Note: This is maintained for backward compatibility with original playbook logic
     successful_disconnects: >-
       {{
         disconnect_results.results | default([]) |
@@ -10,6 +46,7 @@
         list
       }}
 
+# Main operation summary - provides complete overview of playbook execution
 - name: Display operation summary
   ansible.builtin.debug:
     msg: |
@@ -34,6 +71,8 @@
       {% endif %}
       ===================================================
 
+# Report detailed information about any failed operations requiring manual intervention
+# This helps operators identify VMs that need manual attention via vSphere Client
 - name: Report any failed operations
   ansible.builtin.debug:
     msg: |
