@@ -1,0 +1,17 @@
+---
+- name: Gather facts from Ubuntu Desktop
+  hosts: all
+  remote_user: igumas
+  become: no  # Run tasks with sudo
+  become_method: sudo
+  become_user: igumas
+
+  tasks:
+  - name: Gather facts
+    ansible.builtin.setup:
+      gather_subset:
+        - all
+  - name: Display gathered facts 
+    ansible.builtin.debug:
+      var: ansible_facts
+

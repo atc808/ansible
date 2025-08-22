@@ -1,0 +1,68 @@
+---
+# ===============================================================================
+# VM INFORMATION GATHERING MODULE
+# ===============================================================================
+# Purpose: Establish connection to ESXi host and retrieve VM inventory
+#
+# This module handles the initial connection to the ESXi host and gathers
+# basic information about all virtual machines. It includes connection
+# validation and error handling to ensure the playbook can proceed safely.
+#
+# Key Functions:
+# - Tests connectivity to ESXi host with credentials
+# - Validates authentication and permissions
+# - Retrieves comprehensive VM list with basic attributes
+# - Provides connection error diagnostics
+# - Sets up vm_info variable for subsequent processing
+#
+# Error Handling:
+# - Connection failures are caught and reported clearly
+# - Retry logic handles temporary network issues
+# - Failed connections stop execution to prevent partial operations
+# ===============================================================================
+
+# Test basic connectivity and authentication before proceeding
+# This preliminary check catches credential or network issues early
+- name: Test connection to ESXi host
+  community.vmware.vmware_vm_info:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false           # Skip SSL validation for lab environments
+    vm_type: vm                     # Only return actual VMs, not templates
+    show_attribute: false           # Minimal data for connection test
+  register: connection_test
+  delegate_to: localhost            # Run from control node, not target host
+  failed_when: false               # Capture failures for custom handling
+  changed_when: false              # This is a read-only operation
+
+# Verify the connection test succeeded before continuing
+# Provides clear error messaging for connection failures
+- name: Validate ESXi connection
+  ansible.builtin.assert:
+    that:
+      - connection_test is not failed
+      - connection_test.virtual_machines is defined
+    fail_msg: "Failed to connect to ESXi host {{ inventory_hostname }}: {{ connection_test.msg | default('Unknown error') }}"
+
+# Gather comprehensive VM information for processing
+# This is the main data collection step that feeds the rest of the playbook
+- name: Gather VM information from ESXi host
+  community.vmware.vmware_vm_info:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false           # Skip SSL validation for lab environments
+    vm_type: vm                     # Only return actual VMs, not templates
+    show_attribute: true            # Include detailed VM attributes
+  register: vm_info                # This variable is used by subsequent tasks
+  delegate_to: localhost            # Run from control node, not target host
+  retries: 3                       # Handle temporary connectivity issues
+  delay: 5                         # Wait 5 seconds between retries
+  until: vm_info is not failed     # Keep retrying until successful
+
+# Provide operator feedback on discovery results
+# Helps confirm the scope of the operation
+- name: Display VM discovery summary
+  ansible.builtin.debug:
+    msg: "Found {{ vm_info.virtual_machines | length }} VMs on {{ inventory_hostname }}"

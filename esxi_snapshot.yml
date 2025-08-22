@@ -1,0 +1,44 @@
+---
+- name: List VMs with snapshots and details on ESXi
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    validate_certs: false
+
+  tasks:
+    - name: Get detailed list of all VMs (includin UUIDs)
+      vmware_vm_info:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ validate_certs }}"
+      register: vms
+
+    - name: Get snapshot info for each VM
+      vmware_guest_snapshot_info:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        datacenter: "Virtual machine"
+        uuid: "{{ item.uuid }}"
+        validate_certs: "{{ validate_certs }}"
+      loop: "{{ vms.virtual_machines }}"
+      register: snapshot_results
+
+    - name: Show VMs with snapshot details
+      vars:
+        vm_name: >-
+          {{
+            (vms.virtual_machines | selectattr('uuid', 'equalto', item.invocation.module_args.uuid) | first).name
+          }}
+      debug:
+        msg: |
+          VM {{ vm_name }} has snapshots:
+          {% for snap in item.snapshot_info.snapshots %}
+            - Name: {{ snap.name }}
+              Description: {{ snap.description | default('N/A') }}
+              Created: {{ snap.create_time | default('Unknown') }}
+          {% endfor %}
+      loop: "{{ snapshot_results.results }}"
+      when: item.snapshot_info is defined and item.snapshot_info.snapshots | length > 0

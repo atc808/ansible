@@ -1,0 +1,48 @@
+---
+# ===============================================================================
+# RESULTS DISPLAY MODULE
+# ===============================================================================
+# Purpose: Present detailed information about VMs with connected CD/DVD devices
+#
+# This module provides comprehensive output showing all VMs that have CD/DVD
+# drives with connected media. It formats the information in a clear, readable
+# way that helps operators understand what will be affected by disconnect operations.
+#
+# Key Functions:
+# - Displays VM identification information (name, power state, etc.)
+# - Shows detailed CD/DVD device configurations
+# - Indicates blacklist status for each VM
+# - Provides media type and path information
+# - Shows controller/unit mappings for technical reference
+#
+# Output Format:
+# - One section per VM with connected CD devices
+# - Hierarchical display: VM info -> device details
+# - Technical details included for troubleshooting
+# - Clear separation between VMs for readability
+# ===============================================================================
+
+# Display comprehensive information for each VM with connected CD devices
+# This provides full visibility into what the disconnect operation will affect
+- name: Display VMs with connected CD devices
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      VM WITH CD MEDIA FOUND:
+      ===================================================
+      VM Name: {{ item.vm_name }}
+      Power State: {{ item.power_state }}
+      Blacklisted: {{ item.vm_name in vm_blacklist }}
+      
+      Connected CD/DVD Devices:
+      {% for cd in item.cd_devices %}
+      - Device: {{ cd.device_label }}
+        Controller Type: {{ cd.controller_type }}
+        Media Type: {{ cd.media_type }}
+        Media Path: {{ cd.media_path }}
+        Device Key: {{ cd.device_key }}
+        Hot-Removable: {{ cd.hot_removable }}
+        Controller/Unit: {{ cd.controller_number }}/{{ cd.unit_number }}
+      {% endfor %}
+      ===================================================
+  loop: "{{ vms_with_cd_media }}"

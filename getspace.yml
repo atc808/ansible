@@ -1,0 +1,17 @@
+---
+- name: Get disk space information from linux hosts
+  hosts: all
+  remote_user: igumas
+  become: no  # Run tasks with sudo
+  become_method: sudo
+  become_user: igumas
+
+  tasks:
+  - name: Get disk space
+    ansible.builtin.shell:
+      cmd: df -h
+    register: disk_space
+
+  - name: Display disk space
+    ansible.builtin.debug:
+      var: disk_space.stdout_lines

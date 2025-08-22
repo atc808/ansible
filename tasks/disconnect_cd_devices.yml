@@ -1,0 +1,383 @@
+---
+# ===============================================================================
+# CD/DVD DEVICE DISCONNECT MODULE
+# ===============================================================================
+# Purpose: Execute disconnect operations with strategy-based approach
+#
+# This module handles the actual removal/disconnection of CD/DVD devices based
+# on VMware capabilities and limitations. It uses a two-strategy approach to
+# handle different scenarios appropriately.
+#
+# STRATEGY OVERVIEW:
+# Strategy 1 (Media Disconnect): For IDE drives on powered-on VMs
+# - VMware limitation: IDE controllers don't support hot-removal
+# - Solution: Disconnect media only (set type: none)
+# - Result: Drive remains but media is ejected
+#
+# Strategy 2 (Drive Replacement): For SATA drives or powered-off VMs  
+# - Full removal of CD drive with media
+# - Addition of clean replacement drive without media
+# - Result: Clean state ready for future media mounting
+#
+# ERROR HANDLING:
+# - Failed operations are captured and categorized
+# - Retry logic handles temporary vSphere API issues
+# - Comprehensive reporting of successes and failures
+# - Addition only occurs after successful removal
+#
+# SAFETY FEATURES:
+# - VM blacklist filtering prevents accidental operations
+# - Dry-run mode shows planned operations without execution
+# - Force disconnect bypasses guest OS locks
+# - Pause between removal and addition allows ESXi processing
+# ===============================================================================
+
+- name: Initialize disconnect variables
+  ansible.builtin.set_fact:
+    vms_eligible_for_disconnect: []
+    successful_removals: []
+    failed_removals: []
+    successful_additions: []
+    failed_additions: []
+    successful_disconnects: []
+    failed_disconnects: []
+
+- name: Filter VMs for disconnect operations
+  ansible.builtin.set_fact:
+    vms_eligible_for_disconnect: >-
+      {{
+        vms_with_cd_media |
+        rejectattr('vm_name', 'in', vm_blacklist) |
+        selectattr('cd_devices', 'defined') |
+        list
+      }}
+
+- name: Display dry-run information
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      DRY RUN MODE - NO CHANGES WILL BE MADE
+      ===================================================
+      VMs that would be processed: {{ vms_eligible_for_disconnect | length }}
+      Force disconnect enabled: {{ force_disconnect | default(true) }}
+      
+      STRATEGY: For IDE drives on powered-on VMs, disconnect media only
+      
+      Operation Plan:
+      {% for vm in vms_eligible_for_disconnect %}
+      VM: {{ vm.vm_name }} ({{ vm.power_state }})
+      {% for cd in vm.cd_devices %}
+      {% if cd.controller_type == 'IDE' and vm.power_state == 'poweredOn' %}
+      - DISCONNECT MEDIA: {{ cd.device_label }} (Key: {{ cd.device_key }})
+        Media: {{ cd.media_path }}
+        Controller: {{ cd.controller_type }} {{ cd.controller_number }}, Unit {{ cd.unit_number }}
+        Note: IDE drive cannot be hot-removed, will disconnect media only
+      {% else %}
+      - STEP 1: Remove {{ cd.device_label }} (Key: {{ cd.device_key }})
+        Media: {{ cd.media_path }}
+        Controller: {{ cd.controller_type }} {{ cd.controller_number }}, Unit {{ cd.unit_number }}
+      - STEP 2: Add new clean {{ cd.controller_type }} CD drive without media
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      ===================================================
+  when: dry_run | bool
+
+# STRATEGY 1: For IDE drives on powered-on VMs, disconnect media only (not the drive)
+- name: Strategy 1 - Disconnect media from IDE drives on powered-on VMs
+  community.vmware.vmware_guest:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    uuid: "{{ item.0.uuid }}"
+    force: "{{ force_disconnect | default(true) }}"
+    state: present
+    cdrom:
+      - controller_type: "{{ 'ide' if item.1.controller_type == 'IDE' else 'sata' }}"
+        controller_number: "{{ item.1.controller_number }}"
+        unit_number: "{{ item.1.unit_number }}"
+        type: none
+        state: present
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - Disconnect media from {{ item.1.device_label }} ({{ item.1.controller_type }} {{ item.1.controller_number }}/{{ item.1.unit_number }})"
+  delegate_to: localhost
+  when: 
+    - not (dry_run | bool)
+    - item.1.controller_type == 'IDE'
+    - item.0.power_state == 'poweredOn'
+  register: disconnect_results
+  failed_when: false
+  retries: 3
+  delay: 5
+
+# STRATEGY 2: For SATA drives or powered-off VMs, remove and replace drives
+- name: Debug - Show what will be processed for removal
+  ansible.builtin.debug:
+    msg: |
+      VM: {{ item.0.vm_name }}
+      Power State: {{ item.0.power_state }}
+      Device: {{ item.1.device_label }}
+      Controller Type: {{ item.1.controller_type }}
+      Controller Number: {{ item.1.controller_number }}
+      Unit Number: {{ item.1.unit_number }}
+      Will Process: {{ not (item.1.controller_type == 'IDE' and item.0.power_state == 'poweredOn') }}
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  when: not (dry_run | bool)
+
+- name: Strategy 2 - Remove CD drives (SATA or powered-off VMs only)
+  community.vmware.vmware_guest:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    uuid: "{{ item.0.uuid }}"
+    force: "{{ force_disconnect | default(true) }}"
+    state: present
+    cdrom:
+      - controller_type: "{{ 'ide' if item.1.controller_type == 'IDE' else 'sata' }}"
+        controller_number: "{{ item.1.controller_number }}"
+        unit_number: "{{ item.1.unit_number }}"
+        state: absent
+  with_subelements:
+    - "{{ vms_eligible_for_disconnect }}"
+    - cd_devices
+  loop_control:
+    label: "{{ item.0.vm_name }} - Remove {{ item.1.device_label }} ({{ item.1.controller_type }} {{ item.1.controller_number }}/{{ item.1.unit_number }})"
+  delegate_to: localhost
+  when: 
+    - not (dry_run | bool)
+    - not (item.1.controller_type == 'IDE' and item.0.power_state == 'poweredOn')
+  register: removal_results
+  failed_when: false
+  retries: 3
+  delay: 5
+
+# Categorize disconnect results (IDE powered-on VMs)
+- name: Categorize disconnect results (IDE powered-on VMs)
+  ansible.builtin.set_fact:
+    successful_disconnects: >-
+      {{
+        disconnect_results.results | default([]) |
+        selectattr('changed', 'equalto', true) |
+        list
+      }}
+    failed_disconnects: >-
+      {{
+        disconnect_results.results | default([]) |
+        selectattr('failed', 'defined') |
+        selectattr('failed', 'equalto', true) |
+        list
+      }}
+  when: 
+    - not (dry_run | bool)
+    - disconnect_results is defined
+
+- name: Categorize removal results (SATA or powered-off VMs)
+  ansible.builtin.set_fact:
+    successful_removals: >-
+      {{
+        removal_results.results | default([]) |
+        selectattr('failed', 'undefined') |
+        list +
+        removal_results.results | default([]) |
+        selectattr('failed', 'defined') |
+        selectattr('failed', 'equalto', false) |
+        list
+      }}
+    failed_removals: >-
+      {{
+        removal_results.results | default([]) |
+        selectattr('failed', 'defined') |
+        selectattr('failed', 'equalto', true) |
+        list
+      }}
+  when: 
+    - not (dry_run | bool)
+    - removal_results is defined
+
+# Brief pause to allow ESXi to process the removals
+- name: Pause to allow CD drive removal to complete
+  ansible.builtin.pause:
+    seconds: 5
+  when: 
+    - not (dry_run | bool)
+    - successful_removals | length > 0
+
+- name: Debug successful removals before addition
+  ansible.builtin.debug:
+    msg: |
+      Successful removals count: {{ successful_removals | length }}
+      {% for removal in successful_removals %}
+      VM: {{ removal.item.0.vm_name }}
+      Device: {{ removal.item.1.device_label }}
+      Controller: {{ removal.item.1.controller_type }} {{ removal.item.1.controller_number }}/{{ removal.item.1.unit_number }}
+      Changed: {{ removal.changed }}
+      Failed: {{ removal.failed | default('undefined') }}
+      {% endfor %}
+  when: 
+    - not (dry_run | bool)
+    - successful_removals is defined
+
+# Add clean drives back for removed drives only
+- name: Add new clean CD drives without media (for removed drives only)
+  community.vmware.vmware_guest:
+    hostname: "{{ inventory_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    uuid: "{{ item.item.0.uuid }}"
+    force: "{{ force_disconnect | default(true) }}"
+    state: present
+    cdrom:
+      - controller_type: "{{ 'ide' if item.item.1.controller_type == 'IDE' else 'sata' }}"
+        controller_number: "{{ item.item.1.controller_number }}"
+        unit_number: "{{ item.item.1.unit_number }}"
+        type: none
+        state: present
+  loop: "{{ successful_removals | default([]) }}"
+  loop_control:
+    label: "{{ item.item.0.vm_name }} - Add clean {{ item.item.1.controller_type }} CD drive ({{ item.item.1.controller_number }}/{{ item.item.1.unit_number }})"
+  delegate_to: localhost
+  when: 
+    - not (dry_run | bool)
+    - successful_removals | length > 0
+  register: addition_results
+  failed_when: false
+  retries: 3
+  delay: 5
+
+- name: Categorize addition results
+  ansible.builtin.set_fact:
+    successful_additions: >-
+      {{
+        addition_results.results | default([]) |
+        selectattr('changed', 'equalto', true) |
+        list
+      }}
+    failed_additions: >-
+      {{
+        addition_results.results | default([]) |
+        selectattr('failed', 'defined') |
+        selectattr('failed', 'equalto', true) |
+        list
+      }}
+  when: 
+    - not (dry_run | bool)
+    - addition_results is defined
+
+# REPORTING SECTION
+- name: Report successful media disconnects (IDE powered-on VMs)
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      STRATEGY 1 SUCCESS - MEDIA DISCONNECTED:
+      ===================================================
+      VM: {{ item.item.0.vm_name }}
+      Device: {{ item.item.1.device_label }}
+      Original Media: {{ item.item.1.media_path }}
+      Controller: {{ item.item.1.controller_type }} {{ item.item.1.controller_number }}, Unit {{ item.item.1.unit_number }}
+      Result: Media disconnected (drive remains, ready for new media)
+      Note: IDE drive cannot be hot-removed from powered-on VM
+      ===================================================
+  loop: "{{ successful_disconnects | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - successful_disconnects | length > 0
+
+- name: Report successful CD drive removals
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      STRATEGY 2 SUCCESS - CD DRIVE REMOVAL:
+      ===================================================
+      VM: {{ item.item.0.vm_name }}
+      Removed Device: {{ item.item.1.device_label }}
+      Original Device Key: {{ item.item.1.device_key }}
+      Removed Media: {{ item.item.1.media_path }}
+      Controller: {{ item.item.1.controller_type }} {{ item.item.1.controller_number }}, Unit {{ item.item.1.unit_number }}
+      Result: CD/DVD drive with media completely removed
+      ===================================================
+  loop: "{{ successful_removals | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - successful_removals | length > 0
+
+- name: Report successful clean CD drive additions
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      STRATEGY 2 SUCCESS - CLEAN CD DRIVE ADDED:
+      ===================================================
+      VM: {{ item.item.item.0.vm_name }}
+      Added: Clean {{ item.item.item.1.controller_type }} CD/DVD drive
+      Type: none (no media attached)
+      Controller: {{ item.item.item.1.controller_type }} {{ item.item.item.1.controller_number }}, Unit {{ item.item.item.1.unit_number }}
+      Result: Ready for future media mounting without conflicts
+      ===================================================
+  loop: "{{ successful_additions | default([]) }}"
+  when: 
+    - not (dry_run | bool)
+    - successful_additions | length > 0
+
+- name: Report failed operations
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      FAILED OPERATIONS:
+      ===================================================
+      {% for item in failed_disconnects | default([]) %}
+      DISCONNECT FAILED:
+      VM: {{ item.item.0.vm_name }}
+      Device: {{ item.item.1.device_label }}
+      Error: {{ item.msg | default('Unknown error') }}
+      
+      {% endfor %}
+      {% for item in failed_removals | default([]) %}
+      REMOVAL FAILED:
+      VM: {{ item.item.0.vm_name }}
+      Device: {{ item.item.1.device_label }}
+      Error: {{ item.msg | default('Unknown error') }}
+      
+      {% endfor %}
+      {% for item in failed_additions | default([]) %}
+      ADDITION FAILED:
+      VM: {{ item.item.item.0.vm_name }}
+      Controller: {{ item.item.item.1.controller_type }} {{ item.item.item.1.controller_number }}, Unit {{ item.item.item.1.unit_number }}
+      Error: {{ item.msg | default('Unknown error') }}
+      
+      {% endfor %}
+      Manual intervention required via vSphere Client.
+      ===================================================
+  when: 
+    - not (dry_run | bool)
+    - (failed_disconnects | length > 0 or failed_removals | length > 0 or failed_additions | length > 0)
+
+- name: Display operation summary
+  ansible.builtin.debug:
+    msg: |
+      ===================================================
+      OPERATION SUMMARY:
+      ===================================================
+      Total VMs processed: {{ vms_eligible_for_disconnect | length }}
+      
+      Strategy 1 (Media Disconnect - IDE powered-on):
+      - Successful: {{ successful_disconnects | length }}
+      - Failed: {{ failed_disconnects | length }}
+      
+      Strategy 2 (Drive Removal - SATA/powered-off):
+      - Successful removals: {{ successful_removals | length }}
+      - Failed removals: {{ failed_removals | length }}
+      - Successful additions: {{ successful_additions | length }}
+      - Failed additions: {{ failed_additions | length }}
+      
+      Net Result: 
+      - {{ successful_disconnects | length }} VMs have media disconnected from IDE drives
+      - {{ successful_additions | length }} VMs have clean replacement drives
+      ===================================================
+  when: not (dry_run | bool)

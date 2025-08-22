@@ -1,0 +1,88 @@
+---
+- name: Create a Proxmox Virtual Machine
+  hosts: localhost
+  gather_facts: false
+  vars:
+    proxmox_api_host: "prox.3pierces.com"  # Replace with your Proxmox host
+    proxmox_api_user: "root@pam"
+    api_token_id: "sam"  # Replace with your API token ID
+    api_token_secret: "7a3ced0f-1ed9-49a2-8cca-e7485bae6dfb"  # Replace with your API token secret
+    node: "prox"  # Replace with your Proxmox node name
+    iso_storage: "local"  # Storage where the ISO is located
+    iso_file: "rhel-9.5-x86_64-dvd.iso"
+    vm_name: "{{ vm_name }}"
+
+    iso: "local:iso/rhel-9.5-x86_64-dvd.iso"  # Path to ISO in Proxmox storage
+    disk_storage: "pinas"  # Storage pool for the VM disk
+#    disk_size: "80G"
+##    memory: 4096  # 4GB RAM in MB
+##    sockets: 2
+#    cores: 2
+
+
+  tasks:
+    - name: Create a new VM in Proxmox
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ api_token_id }}"
+        api_token_secret: "{{ api_token_secret }}"
+
+        #api_password: "{{ proxmox_api_password }}"
+        node: "{{ node }}"
+   #     vmid: "{{ vm_id }}"
+        name: "{{ vm_name }}"
+        memory: "{{ memory }}"                      # Memory in MB
+        cores: "{{ cores }}"                        # Number of CPU cores
+        sockets: "{{ sockets }}"                        # Number of CPU sockets
+     #   disk: "{{ disk_size }}"                       # Disk size
+     #   storage: "{{ storage }}"          # Storage location
+        net: '{"net0":"virtio,bridge=vmbr0"}'  # Network configuration
+        ostype: l26                       # OS type (Linux 2.6+ kernel)
+ #       ide: "{{ iso }},media=cdrom"     # Mount ISO for installation
+        ide:
+          ide2: "{{ iso_storage }}:iso/{{ iso_file }},media=cdrom"
+        scsi:
+          scsi0: "{{ disk_storage }}:{{ disk_size }},format=qcow2"
+        boot: "cd"                        # Boot from CD (ISO)
+        state: present
+      register: vm_creation
+
+
+  #   - name: Get VM information
+  #     community.general.proxmox_kvm:       
+  #       api_host: "{{ proxmox_api_host }}"
+  #       api_user: "{{ proxmox_api_user }}"
+  #       api_token_id: "{{ api_token_id }}"
+  #       api_token_secret: "{{ api_token_secret }}"
+
+  #       node: "{{ node }}"
+  #       name: "{{ vm_name }}"
+  # #      state: present
+  #     register: vm_info
+  #     ignore_errors: true
+
+  #   - name: Display VMID
+  #     ansible.builtin.debug:
+  #       msg: "VMID for {{ vm_name }} is {{ vm_info.vmid | default('not found') }}"
+  #     when: vm_info.vmid is defined
+
+  #   - name: Fail if VM not found
+  #     ansible.builtin.fail:
+  #       msg: "No VM found with name {{ vm_name }} on node {{ proxmox_node }}"
+  #     when: vm_info.vmid is not defined
+
+
+#     - name: Start the VM
+#       community.general.proxmox_kvm:
+#         api_host: "{{ proxmox_api_host }}"
+#         api_user: "{{ proxmox_api_user }}"
+#         api_token_id: "{{ api_token_id }}"
+#         api_token_secret: "{{api_token_secret }}"
+#        # api_password: "{{ proxmox_api_password }}"
+#         node: "{{ node }}"
+#  #       name: "{{ vm_name }}"
+#         vmid: "{{ vm_info.vmid }}"
+#         state: started
+#       when: vm_creation.changed
+

@@ -1,0 +1,33 @@
+---
+- name: Get running VMs from ESXi host
+  hosts: all
+  gather_facts: no
+  vars:
+     esxi_hostname: "{{ inventory_hostname }}"
+     esxi_username: "root"
+     esxi_password: "Citl0ml!"
+
+  tasks:
+    - name: Gather information about all VMs
+      community.vmware.vmware_vm_info:
+        hostname: "{{ esxi_hostname }}"
+        username: "{{ esxi_username }}"
+        password: "{{ esxi_password }}"
+        validate_certs: no
+      delegate_to: localhost
+      register: vm_info
+
+    - name: Debug vm_info output
+      debug:
+        var: vm_info
+      when: vm_info is defined
+
+    - name: Extract running VM names
+      set_fact:
+        running_vms: "{{ vm_info.virtual_machines | selectattr('power_state', 'equalto', 'poweredOn') | map(attribute='guest_name') | list }}"
+      when: vm_info.virtual_machines is defined
+
+    - name: Display running VMs
+      debug:
+        msg: "Running VMs: {{ running_vms }}"
+      when: running_vms is defined
