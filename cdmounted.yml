@@ -61,7 +61,7 @@
     # =========================================================================
     # VM blacklist - VMs to exclude from disconnect operations (case-sensitive)
     # Add VM names here to protect critical systems from automated changes
-    vm_blacklist: "[{{ blacklist }}]"
+    vm_blacklist: []
     # Example: vm_blacklist: ["critical-vm-01", "production-db", "backup-server"]
   
     # =========================================================================
