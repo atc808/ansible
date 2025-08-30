@@ -78,45 +78,45 @@
       loop: "{{ network_info.stdout | from_json }}"
       when: network_info.stdout is defined and network_info.stdout != "null"
 
-    - name: Save system information to file
-      delegate_to: localhost
-      copy:
-        content: |
-          System Information Report for {{ ansible_hostname }}
-          =====================================================
-          Generated on: {{ ansible_date_time.iso8601 }}
+    # - name: Save system information to file
+    #   delegate_to: localhost
+    #   copy:
+    #     content: |
+    #       System Information Report for {{ ansible_hostname }}
+    #       =====================================================
+    #       Generated on: {{ ansible_date_time.iso8601 }}
           
-          Basic Information:
-          - Hostname: {{ ansible_hostname }}
-          - OS: {{ ansible_os_name }}
-          - Architecture: {{ ansible_architecture }}
-          - Domain: {{ ansible_domain }}
-          - IP Addresses: {{ ansible_ip_addresses | join(', ') }}
-          - Uptime: {{ (ansible_uptime_seconds | int / 86400) | round(2) }} days
+    #       Basic Information:
+    #       - Hostname: {{ ansible_hostname }}
+    #       - OS: {{ ansible_os_name }}
+    #       - Architecture: {{ ansible_architecture }}
+    #       - Domain: {{ ansible_domain }}
+    #       - IP Addresses: {{ ansible_ip_addresses | join(', ') }}
+    #       - Uptime: {{ (ansible_uptime_seconds | int / 86400) | round(2) }} days
           
-          Detailed System Information:
-          {{ system_details.stdout | default('Not available') }}
+    #       Detailed System Information:
+    #       {{ system_details.stdout | default('Not available') }}
           
-          Disk Information:
-          {{ disk_info.stdout | default('Not available') }}
+    #       Disk Information:
+    #       {{ disk_info.stdout | default('Not available') }}
           
-          Network Adapters:
-          {{ network_info.stdout | default('Not available') }}
+    #       Network Adapters:
+    #       {{ network_info.stdout | default('Not available') }}
           
-          Running Services (sample):
-          {{ services_info.stdout | default('Not available') }}
+    #       Running Services (sample):
+    #       {{ services_info.stdout | default('Not available') }}
           
-          Recent Windows Updates:
-          {{ updates_info.stdout | default('Not available') }}
+    #       Recent Windows Updates:
+    #       {{ updates_info.stdout | default('Not available') }}
           
-          Installed Software (recent):
-          {{ software_info.stdout | default('Not available') }}
-        dest: "./system_info_{{ ansible_hostname }}_{{ ansible_date_time.epoch }}.txt"
-      when: ansible_hostname is defined
+    #       Installed Software (recent):
+    #       {{ software_info.stdout | default('Not available') }}
+    #     dest: "./system_info_{{ ansible_hostname }}_{{ ansible_date_time.epoch }}.txt"
+    #   when: ansible_hostname is defined
 
-  post_tasks:
-    - name: Summary
-      debug:
-        msg:
-          - "System information gathering completed for {{ ansible_hostname }}"
-          - "Report saved to: ./system_info_{{ ansible_hostname }}_{{ ansible_date_time.epoch }}.txt"
+  # post_tasks:
+  #   - name: Summary
+  #     debug:
+  #       msg:
+  #         - "System information gathering completed for {{ ansible_hostname }}"
+  #         - "Report saved to: ./system_info_{{ ansible_hostname }}_{{ ansible_date_time.epoch }}.txt"
