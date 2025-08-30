@@ -1,15 +1,122 @@
 ---
-- name: Test win_shell
-  hosts: spiderman.3pierces.com
-  gather_facts: false
+- name: Gather Windows System Information
+  hosts: all
+  gather_facts: yes
+  vars:
+    # WinRM connection variables
+    ansible_connection: winrm
+    ansible_winrm_transport: ntlm
+    ansible_winrm_server_cert_validation: ignore
+    # Uncomment and modify these if needed
+    # ansible_user: "{{ vault_windows_user }}"
+    # ansible_password: "{{ vault_windows_password }}"
+    # ansible_port: 5986  # Use 5985 for HTTP, 5986 for HTTPS
+
   tasks:
-    - name: Debug test command
-      ansible.builtin.debug:
-        msg: "Executing command: dir"
-    - name: Test command
-      ansible.windows.win_shell:
-        cmd: dir
-      register: result
-    - name: Display result
-      ansible.builtin.debug:
-        msg: "{{ result.stdout_lines }}"
+    - name: Gather Windows facts
+      ansible.windows.setup:
+      register: windows_facts
+
+    - name: Get detailed system information
+      ansible.windows.win_shell: |
+        Get-ComputerInfo | Select-Object -Property WindowsProductName, WindowsVersion, WindowsBuildLabEx, TotalPhysicalMemory, CsProcessors, CsNumberOfProcessors, CsNumberOfLogicalProcessors | ConvertTo-Json
+      register: system_details
+
+    - name: Get disk information
+      ansible.windows.win_shell: |
+        Get-WmiObject -Class Win32_LogicalDisk | Select-Object DeviceID, Size, FreeSpace, FileSystem | ConvertTo-Json
+      register: disk_info
+
+    - name: Get network adapter information
+      ansible.windows.win_shell: |
+        Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Select-Object Name, InterfaceDescription, LinkSpeed | ConvertTo-Json
+      register: network_info
+
+    - name: Get installed software (top 20 by install date)
+      ansible.windows.win_shell: |
+        Get-WmiObject -Class Win32_Product | Sort-Object InstallDate -Descending | Select-Object -First 20 Name, Version, Vendor, InstallDate | ConvertTo-Json
+      register: software_info
+      ignore_errors: yes
+
+    - name: Get Windows services (running)
+      ansible.windows.win_shell: |
+        Get-Service | Where-Object {$_.Status -eq "Running"} | Select-Object Name, DisplayName, Status | ConvertTo-Json
+      register: services_info
+
+    - name: Get Windows updates information
+      ansible.windows.win_shell: |
+        Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10 HotFixID, Description, InstalledOn | ConvertTo-Json
+      register: updates_info
+
+    - name: Display basic system information
+      debug:
+        msg:
+          - "Hostname: {{ ansible_hostname }}"
+          - "OS: {{ ansible_os_name }}"
+          - "OS Family: {{ ansible_os_family }}"
+          - "Architecture: {{ ansible_architecture }}"
+          - "Domain: {{ ansible_domain }}"
+          - "IP Address: {{ ansible_ip_addresses | join(', ') }}"
+          - "Uptime: {{ (ansible_uptime_seconds | int / 86400) | round(2) }} days"
+
+    - name: Parse and display detailed system info
+      debug:
+        var: system_details.stdout | from_json
+      when: system_details.stdout is defined
+
+    - name: Display disk information
+      debug:
+        msg:
+          - "Drive {{ item.DeviceID }}: {{ (item.Size | int / 1024 / 1024 / 1024) | round(2) }}GB total, {{ (item.FreeSpace | int / 1024 / 1024 / 1024) | round(2) }}GB free ({{ item.FileSystem }})"
+      loop: "{{ disk_info.stdout | from_json }}"
+      when: disk_info.stdout is defined and disk_info.stdout != "null"
+
+    - name: Display network adapter information
+      debug:
+        msg:
+          - "Network Adapter: {{ item.Name }} - {{ item.InterfaceDescription }} - Speed: {{ item.LinkSpeed }}"
+      loop: "{{ network_info.stdout | from_json }}"
+      when: network_info.stdout is defined and network_info.stdout != "null"
+
+    - name: Save system information to file
+      delegate_to: localhost
+      copy:
+        content: |
+          System Information Report for {{ ansible_hostname }}
+          =====================================================
+          Generated on: {{ ansible_date_time.iso8601 }}
+          
+          Basic Information:
+          - Hostname: {{ ansible_hostname }}
+          - OS: {{ ansible_os_name }}
+          - Architecture: {{ ansible_architecture }}
+          - Domain: {{ ansible_domain }}
+          - IP Addresses: {{ ansible_ip_addresses | join(', ') }}
+          - Uptime: {{ (ansible_uptime_seconds | int / 86400) | round(2) }} days
+          
+          Detailed System Information:
+          {{ system_details.stdout | default('Not available') }}
+          
+          Disk Information:
+          {{ disk_info.stdout | default('Not available') }}
+          
+          Network Adapters:
+          {{ network_info.stdout | default('Not available') }}
+          
+          Running Services (sample):
+          {{ services_info.stdout | default('Not available') }}
+          
+          Recent Windows Updates:
+          {{ updates_info.stdout | default('Not available') }}
+          
+          Installed Software (recent):
+          {{ software_info.stdout | default('Not available') }}
+        dest: "./system_info_{{ ansible_hostname }}_{{ ansible_date_time.epoch }}.txt"
+      when: ansible_hostname is defined
+
+  post_tasks:
+    - name: Summary
+      debug:
+        msg:
+          - "System information gathering completed for {{ ansible_hostname }}"
+          - "Report saved to: ./system_info_{{ ansible_hostname }}_{{ ansible_date_time.epoch }}.txt"
