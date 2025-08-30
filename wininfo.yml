@@ -4,38 +4,58 @@
   gather_facts: false
 
   tasks:
+    - name: Debug systeminfo command
+      ansible.builtin.debug:
+        msg: "Executing command: systeminfo"
+
     - name: Gather Windows system information
       ansible.windows.win_shell:
         cmd: systeminfo
       register: system_info
+      ignore_errors: true
 
     - name: Display system information
       ansible.builtin.debug:
-        msg: "{{ system_info.stdout_lines }}"
+        msg: "{{ system_info.stdout_lines | default(['No output - command failed']) }}"
+
+    - name: Debug disk command
+      ansible.builtin.debug:
+        msg: "Executing command: Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,Description,FileSystem,FreeSpace,Size | Format-Table -AutoSize | Out-String"
 
     - name: Gather disk information
       ansible.windows.win_shell:
         cmd: Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,Description,FileSystem,FreeSpace,Size | Format-Table -AutoSize | Out-String
       register: disk_info
+      ignore_errors: true
 
     - name: Display disk information
       ansible.builtin.debug:
-        msg: "{{ disk_info.stdout_lines }}"
+        msg: "{{ disk_info.stdout_lines | default(['No output - command failed']) }}"
+
+    - name: Debug CPU command
+      ansible.builtin.debug:
+        msg: "Executing command: Get-CimInstance Win32_Processor | Select-Object Name,DeviceID,MaxClockSpeed,Manufacturer | Format-Table -AutoSize | Out-String"
 
     - name: Gather CPU information
       ansible.windows.win_shell:
         cmd: Get-CimInstance Win32_Processor | Select-Object Name,DeviceID,MaxClockSpeed,Manufacturer | Format-Table -AutoSize | Out-String
       register: cpu_info
+      ignore_errors: true
 
     - name: Display CPU information
       ansible.builtin.debug:
-        msg: "{{ cpu_info.stdout_lines }}"
+        msg: "{{ cpu_info.stdout_lines | default(['No output - command failed']) }}"
+
+    - name: Debug memory command
+      ansible.builtin.debug:
+        msg: "Executing command: Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Manufacturer,Speed | Format-Table -AutoSize | Out-String"
 
     - name: Gather memory information
       ansible.windows.win_shell:
         cmd: Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Manufacturer,Speed | Format-Table -AutoSize | Out-String
       register: memory_info
+      ignore_errors: true
 
     - name: Display memory information
       ansible.builtin.debug:
-        msg: "{{ memory_info.stdout_lines }}"
+        msg: "{{ memory_info.stdout_lines | default(['No output - command failed']) }}"
