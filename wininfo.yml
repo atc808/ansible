@@ -1,71 +1,15 @@
 ---
-- name: Gather system information from Windows 11 host
-  hosts: all
+- name: Test win_shell
+  hosts: spiderman.3pierces.com
   gather_facts: false
-
   tasks:
-    - name: Test PowerShell availability
+    - name: Debug test command
+      ansible.builtin.debug:
+        msg: "Executing command: dir"
+    - name: Test command
       ansible.windows.win_shell:
-        cmd: powershell -Command "Write-Output 'PowerShell is available'"
-      register: ps_test
-      ignore_errors: true
-
-    - name: Display PowerShell test result
+        cmd: dir
+      register: result
+    - name: Display result
       ansible.builtin.debug:
-        msg: "{{ ps_test.stdout_lines | default(['Failed to run PowerShell test: ' + (ps_test.msg | default('Unknown error'))]) }}"
-
-    - name: Debug systeminfo command
-      ansible.builtin.debug:
-        msg: "Executing command: systeminfo"
-
-    - name: Gather Windows system information
-      ansible.windows.win_shell:
-        cmd: systeminfo
-      register: system_info
-      ignore_errors: true
-
-    - name: Display system information
-      ansible.builtin.debug:
-        msg: "{{ system_info.stdout_lines | default(['Failed to gather system info: ' + (system_info.msg | default('Unknown error'))]) }}"
-
-    - name: Debug disk command
-      ansible.builtin.debug:
-        msg: "Executing command: Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,Description,FileSystem,FreeSpace,Size | Format-Table -AutoSize | Out-String"
-
-    - name: Gather disk information
-      ansible.windows.win_shell:
-        cmd: Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,Description,FileSystem,FreeSpace,Size | Format-Table -AutoSize | Out-String
-      register: disk_info
-      ignore_errors: true
-
-    - name: Display disk information
-      ansible.builtin.debug:
-        msg: "{{ disk_info.stdout_lines | default(['Failed to gather disk info: ' + (disk_info.msg | default('Unknown error'))]) }}"
-
-    - name: Debug CPU command
-      ansible.builtin.debug:
-        msg: "Executing command: Get-CimInstance Win32_Processor | Select-Object Name,DeviceID,MaxClockSpeed,Manufacturer | Format-Table -AutoSize | Out-String"
-
-    - name: Gather CPU information
-      ansible.windows.win_shell:
-        cmd: Get-CimInstance Win32_Processor | Select-Object Name,DeviceID,MaxClockSpeed,Manufacturer | Format-Table -AutoSize | Out-String
-      register: cpu_info
-      ignore_errors: true
-
-    - name: Display CPU information
-      ansible.builtin.debug:
-        msg: "{{ cpu_info.stdout_lines | default(['Failed to gather CPU info: ' + (cpu_info.msg | default('Unknown error'))]) }}"
-
-    - name: Debug memory command
-      ansible.builtin.debug:
-        msg: "Executing command: Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Manufacturer,Speed | Format-Table -AutoSize | Out-String"
-
-    - name: Gather memory information
-      ansible.windows.win_shell:
-        cmd: Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Manufacturer,Speed | Format-Table -AutoSize | Out-String
-      register: memory_info
-      ignore_errors: true
-
-    - name: Display memory information
-      ansible.builtin.debug:
-        msg: "{{ memory_info.stdout_lines | default(['Failed to gather memory info: ' + (memory_info.msg | default('Unknown error'))]) }}"
+        msg: "{{ result.stdout_lines }}"
