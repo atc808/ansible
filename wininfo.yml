@@ -1,11 +1,11 @@
 ---
-- name: Gather system information from Windows host
+- name: Gather system information from Windows 11 host
   hosts: all
   gather_facts: false
 
   tasks:
     - name: Gather Windows system information
-      ansible.windows.win_command:
+      ansible.windows.win_shell:
         cmd: systeminfo
       register: system_info
 
@@ -15,7 +15,7 @@
 
     - name: Gather disk information
       ansible.windows.win_shell:
-        cmd: wmic logicaldisk get caption,description,filesystem,freespace,size
+        cmd: Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,Description,FileSystem,FreeSpace,Size | Format-Table -AutoSize | Out-String
       register: disk_info
 
     - name: Display disk information
@@ -24,7 +24,7 @@
 
     - name: Gather CPU information
       ansible.windows.win_shell:
-        cmd: wmic cpu get caption,deviceid,maxclockspeed,manufacturer
+        cmd: Get-CimInstance Win32_Processor | Select-Object Name,DeviceID,MaxClockSpeed,Manufacturer | Format-Table -AutoSize | Out-String
       register: cpu_info
 
     - name: Display CPU information
@@ -33,7 +33,7 @@
 
     - name: Gather memory information
       ansible.windows.win_shell:
-        cmd: wmic memorychip get capacity,manufacturer,speed
+        cmd: Get-CimInstance Win32_PhysicalMemory | Select-Object Capacity,Manufacturer,Speed | Format-Table -AutoSize | Out-String
       register: memory_info
 
     - name: Display memory information
