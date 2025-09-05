@@ -34,23 +34,36 @@
         validate_certs: "{{ vcenter_validate_certs }}"
         local_role_name: "Nessus_Scanner"
         local_privilege_ids:
-          # Global Settings permissions
+          # Global Settings permissions (as specified in document)
           - Global.Settings
           
-          # Basic system read permissions needed for vulnerability scanning
-          - System.Anonymous
-          - System.Read
-          - System.View
+          # VMware vSphere Lifecycle Manager permissions (as detailed in document)
+          # Lifecycle Manager: General Privileges - Read
+          - VcLifecycleManager.Read
           
-          # Virtual machine read permissions for VIB detection
-          - VirtualMachine.Config.Settings
-          - VirtualMachine.State.CreateSnapshot
+          # Desired Configuration Management Privileges - Read-only access
+          - VcLifecycleManager.DesiredConfiguration.Read
           
-          # Host configuration read permissions
-          - Host.Config.Settings
+          # ESXi Health Perspectives - Read  
+          - VcLifecycleManager.HealthPerspectives.Read
           
-          # Datastore read permissions  
-          - Datastore.Browse
+          # Lifecycle Manager: Hardware Compatibility Privileges - Access Hardware Compatibility
+          - VcLifecycleManager.HardwareCompatibility.Read
+          
+          # Lifecycle Manager: Image Privileges - Read
+          - VcLifecycleManager.Image.Read
+          
+          # Lifecycle Manager: Image Remediation Privileges - Read
+          - VcLifecycleManager.ImageRemediation.Read
+          
+          # Lifecycle Manager: Settings Privileges - Read
+          - VcLifecycleManager.Settings.Read
+          
+          # Manage Patches and Upgrades - Scan for Applicable Patches, Extensions, and Upgrades
+          - VcLifecycleManager.Patch.Scan
+          
+          # Manage Patches and Upgrades - View Compliance Status
+          - VcLifecycleManager.Compliance.View
           
         state: present
       delegate_to: localhost
