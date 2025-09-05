@@ -8,54 +8,68 @@
     vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"         # Admin user from VMWARE_USER env var  
     vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"     # Admin password from VMWARE_PASSWORD env var
     vcenter_validate_certs: false                                 # Set to true in production
+    # Add the missing scanner service account variable
+    scanner_service_account: "{{ lookup('env', 'SCANNER_SERVICE_ACCOUNT') | default('nessus-scanner@vsphere.local') }}"
     
   tasks:
-    # - name: Get existing roles for reference
-    #   community.vmware.vmware_local_role_info:
-    #     hostname: "{{ vcenter_hostname }}"
-    #     username: "{{ vcenter_username }}"
-    #     password: "{{ vcenter_password }}"
-    #     validate_certs: "{{ vcenter_validate_certs }}"
-    #   register: existing_roles
-    #   delegate_to: localhost
-    #   tags: debug
+    - name: Validate required environment variables
+      fail:
+        msg: "Required environment variable {{ item }} is not set"
+      when: lookup('env', item) == ""
+      loop:
+        - 'VMWARE_HOST'
+        - 'VMWARE_USER'
+        - 'VMWARE_PASSWORD'
+      tags: validation
+
+    - name: Get existing roles for reference
+      community.vmware.vmware_local_role_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+      register: existing_roles
+      delegate_to: localhost
+      tags: debug
       
-    # - name: Display existing roles
-    #   debug:
-    #     var: existing_roles
-    #  # when: existing_roles is defined
-    #   tags: debug
+    - name: Display existing roles
+      debug:
+        var: existing_roles.local_role_info
+      when: existing_roles is defined and existing_roles.local_role_info is defined
+      tags: debug
     
-  - name: Create Nessus_Scanner custom role with correct privileges for vSphere 8
-    community.vmware.vmware_local_role_manager:
-      hostname: "{{ vcenter_hostname }}"
-      username: "{{ vcenter_username }}"
-      password: "{{ vcenter_password }}"
-      validate_certs: "{{ vcenter_validate_certs }}"
-      local_role_name: "Nessus_Scanner"
-      local_privilege_ids:
-      # Core privilege required for Nessus vulnerability scanning (minimum requirement)
-        - LifecycleManager.Image.Read
-      
-      # Optional privilege for compliance scanning (recommended)
-        - Global.Settings
-      
-      # Additional view privileges that may be helpful for comprehensive scanning
-        - LifecycleManager.View
-        - System.Anonymous
-        - System.Read
-      
-    state: present
-  delegate_to: localhost
-  register: role_creation
-  tags:
-    - nessus
-    - security
-    - vmware
+    - name: Create Nessus_Scanner custom role with correct privileges for vSphere 8
+      community.vmware.vmware_local_role_manager:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        local_role_name: "Nessus_Scanner"
+        local_privilege_ids:
+          # Core privilege required for Nessus vulnerability scanning (minimum requirement)
+          - LifecycleManager.Image.Read
+          
+          # Optional privilege for compliance scanning (recommended)
+          - Global.Settings
+          
+          # Additional view privileges that may be helpful for comprehensive scanning
+          - LifecycleManager.View
+          - System.Anonymous
+          - System.Read
+        
+        state: present
+      delegate_to: localhost
+      register: role_creation
+      tags:
+        - nessus
+        - security
+        - vmware
+
     - name: Display role creation result
       debug:
         var: role_creation
       when: role_creation is defined
+      tags: debug
       
     - name: Assign Nessus_Scanner role to service account at root level
       community.vmware.vmware_object_role_permission:
@@ -70,11 +84,13 @@
         state: present
       delegate_to: localhost
       register: permission_assignment
+      when: role_creation is succeeded
       
     - name: Display permission assignment result
       debug:
         var: permission_assignment
       when: permission_assignment is defined
+      tags: debug
       
     - name: Verify role creation and assignment
       community.vmware.vmware_object_role_permission_info:
@@ -87,8 +103,20 @@
         object_name: "rootFolder"
       register: verification
       delegate_to: localhost
+      when: permission_assignment is succeeded
       
     - name: Display verification results
       debug:
         msg: "Role assignment verified: {{ verification.object_role_permission_info }}"
-      when: verification is defined
+      when: verification is defined and verification.object_role_permission_info is defined
+      tags: results
+
+    - name: Summary of actions performed
+      debug:
+        msg: |
+          Playbook execution summary:
+          - Created role: {{ role_creation.changed | default(false) }}
+          - Assigned permissions: {{ permission_assignment.changed | default(false) }}
+          - Service account: {{ scanner_service_account }}
+          - vCenter: {{ vcenter_hostname }}
+      tags: summary
