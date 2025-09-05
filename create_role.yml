@@ -37,33 +37,13 @@
           # Global Settings permissions (as specified in document)
           #- Global.Settings
           
-          # # VMware vSphere Lifecycle Manager permissions (as detailed in document)
-          # # Lifecycle Manager: General Privileges - Read
-          - VcLifecycleManager.Image.Read
-          
-          # # Desired Configuration Management Privileges - Read-only access
-          # - VcLifecycleManager.DesiredConfiguration.Read
-          
-          # # ESXi Health Perspectives - Read  
-          # - VcLifecycleManager.HealthPerspectives.Read
-          
-          # # Lifecycle Manager: Hardware Compatibility Privileges - Access Hardware Compatibility
-          # - VcLifecycleManager.HardwareCompatibility.Read
-          
-          # # Lifecycle Manager: Image Privileges - Read
-          - VcLifecycleManager.Image.Read
-          
-          # # Lifecycle Manager: Image Remediation Privileges - Read
-          # - VcLifecycleManager.ImageRemediation.Read
-          
-          # # Lifecycle Manager: Settings Privileges - Read
-          # - VcLifecycleManager.Settings.Read
-          
-          # # Manage Patches and Upgrades - Scan for Applicable Patches, Extensions, and Upgrades
-          # - VcLifecycleManager.Patch.Scan
-          
-          # # Manage Patches and Upgrades - View Compliance Status
-          # - VcLifecycleManager.Compliance.View
+          - DesiredState.Configuration.Read
+          - Health.Read
+          - Global.LifecycleManager.View
+          - Global.LifecycleManager.HardwareCompatibility.View
+          - Global.LifecycleManager.Image.View
+          - Global.LifecycleManager.ImageRemediation.View
+          - Global.LifecycleManager.Settings.View
           
         state: present
       delegate_to: localhost
