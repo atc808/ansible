@@ -23,14 +23,14 @@
           # Global.Settings
           - "Global.Settings"
           # vSphere Lifecycle Manager privileges
-          - "VcIntegrity.lifecycleSettings.Read"
-          - "VcIntegrity.lifecycleHealth.Read" 
-          - "VcIntegrity.lifecycle.Read"
-          - "VcIntegrity.lifecycleHCL.Read"
-          - "VcIntegrity.lifecycleImage.Read"
-          - "VcIntegrity.lifecycleRemediation.Read"
-          - "VcIntegrity.lifecycleSoftwareRemediation.Read"
-          - "VcIntegrity.lifecycleStagingArea.Read"
+          - "lifecycleSettings.Read"
+          - "lifecycleHealth.Read" 
+          - "lifecycle.Read"
+          - "lifecycleHCL.Read"
+          - "lifecycleImage.Read"
+          - "lifecycleRemediation.Read"
+          - "lifecycleSoftwareRemediation.Read"
+          - "lifecycleStagingArea.Read"
           # Manage Patches and Upgrades
           - "EsxUpdate.View"
           - "EsxUpdate.Update"
