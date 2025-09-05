@@ -36,10 +36,7 @@
         local_privilege_ids:
           # Global Settings permissions (as specified in document)
           #- Global.Settings
-          
-          - DesiredState.Configuration.Read
-          - Health.Read
-          - Global.LifecycleManager.View
+
           - Global.LifecycleManager.HardwareCompatibility.View
           - Global.LifecycleManager.Image.View
           - Global.LifecycleManager.ImageRemediation.View
