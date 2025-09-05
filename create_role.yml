@@ -10,21 +10,21 @@
     vcenter_validate_certs: false                    # Set to true in production
     
   tasks:
-    - name: Get available privileges for reference
-      community.vmware.vmware_privilege_info:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: "{{ vcenter_validate_certs }}"
-      register: privilege_info
-      delegate_to: localhost
-      tags: debug
+    # - name: Get available privileges for reference
+    #   community.vmware.vmware_privilege_info:
+    #     hostname: "{{ vcenter_hostname }}"
+    #     username: "{{ vcenter_username }}"
+    #     password: "{{ vcenter_password }}"
+    #     validate_certs: "{{ vcenter_validate_certs }}"
+    #   register: privilege_info
+    #   delegate_to: localhost
+    #   tags: debug
       
-    - name: Display Lifecycle Manager privileges
-      debug:
-        msg: "{{ privilege_info.privilege_info | selectattr('priv_id', 'search', 'VcLifecycle|Lifecycle') | list }}"
-      when: privilege_info is defined
-      tags: debug
+    # - name: Display Lifecycle Manager privileges
+    #   debug:
+    #     msg: "{{ privilege_info.privilege_info | selectattr('priv_id', 'search', 'VcLifecycle|Lifecycle') | list }}"
+    #   when: privilege_info is defined
+    #   tags: debug
     
     - name: Create Nessus_Scanner custom role
       community.vmware.vmware_local_role_manager:
