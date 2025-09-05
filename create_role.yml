@@ -10,21 +10,21 @@
     vcenter_validate_certs: false                                 # Set to true in production
     
   tasks:
-    - name: Get existing roles for reference
-      community.vmware.vmware_local_role_info:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: "{{ vcenter_validate_certs }}"
-      register: existing_roles
-      delegate_to: localhost
-      tags: debug
+    # - name: Get existing roles for reference
+    #   community.vmware.vmware_local_role_info:
+    #     hostname: "{{ vcenter_hostname }}"
+    #     username: "{{ vcenter_username }}"
+    #     password: "{{ vcenter_password }}"
+    #     validate_certs: "{{ vcenter_validate_certs }}"
+    #   register: existing_roles
+    #   delegate_to: localhost
+    #   tags: debug
       
-    - name: Display existing roles
-      debug:
-        var: existing_roles
-     # when: existing_roles is defined
-      tags: debug
+    # - name: Display existing roles
+    #   debug:
+    #     var: existing_roles
+    #  # when: existing_roles is defined
+    #   tags: debug
     
     - name: Create Nessus_Scanner custom role with basic privileges
       community.vmware.vmware_local_role_manager:
