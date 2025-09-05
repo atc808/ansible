@@ -1,0 +1,60 @@
+---
+- name: Create Nessus_Scanner role in vCenter
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # Required parameters from Ansible Automation Platform
+    vcenter_hostname: "{{ vcenter_fqdn }}"           # vCenter FQDN
+    vcenter_username: "{{ vcenter_admin_user }}"     # Admin user with role creation permissions
+    vcenter_password: "{{ vcenter_admin_password }}" # Admin password
+    vcenter_validate_certs: false                    # Set to true in production
+    
+  tasks:
+    - name: Create Nessus_Scanner custom role
+      community.vmware.vmware_local_role_manager:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        local_role_name: "Nessus_Scanner"
+        local_privilege_ids:
+          # Global Settings permissions
+          - Global.Settings
+          
+          # VMware vSphere Lifecycle Manager permissions
+          - VcLifecycle.Read                                    # Lifecycle Manager: General Privileges - Read
+          - VcLifecycle.DesiredConfigReadOnlyAccess            # Desired Configuration Management - Read-only access
+          - VcLifecycle.HealthPerspectives.Read                # ESXi Health Perspectives - Read
+          - VcLifecycle.HardwareCompatibility.Read            # Hardware Compatibility - Access Hardware Compatibility
+          - VcLifecycle.Image.Read                             # Image Privileges - Read
+          - VcLifecycle.ImageRemediation.Read                  # Image Remediation Privileges - Read
+          - VcLifecycle.Settings.Read                          # Settings Privileges - Read
+          - VcLifecycle.ScanForApplicablePatches              # Manage Patches - Scan for Applicable Patches
+          - VcLifecycle.ViewComplianceStatus                   # Manage Patches - View Compliance Status
+        state: present
+      delegate_to: localhost
+      
+    - name: Assign Nessus_Scanner role to service account
+      community.vmware.vmware_global_role_manager:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        user_name: "{{ scanner_service_account }}"            # Service account from AAP (e.g., ENT_vSphere_ReadOnly)
+        role_name: "Nessus_Scanner"
+        state: present
+      delegate_to: localhost
+      
+    - name: Verify role creation
+      community.vmware.vmware_local_role_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+      register: role_info
+      delegate_to: localhost
+      
+    - name: Display created role information
+      debug:
+        msg: "Nessus_Scanner role created successfully with {{ role_info.local_role_manager_info | selectattr('role_name', 'equalto', 'Nessus_Scanner') | list | length }} matching roles found"
+      when: role_info.local_role_manager_info is defined
