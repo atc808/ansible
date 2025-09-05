@@ -24,18 +24,18 @@
         local_role_name: "Nessus_Scanner"
         local_privilege_ids:
           # Global Settings permissions
-          - Global.Settings
+          - "Global.Settings"
           
           # VMware vSphere Lifecycle Manager permissions
-          - VcLifecycle.Read                                    # Lifecycle Manager: General Privileges - Read
-          - VcLifecycle.DesiredConfigReadOnlyAccess            # Desired Configuration Management - Read-only access
-          - VcLifecycle.HealthPerspectives.Read                # ESXi Health Perspectives - Read
-          - VcLifecycle.HardwareCompatibility.Read            # Hardware Compatibility - Access Hardware Compatibility
-          - VcLifecycle.Image.Read                             # Image Privileges - Read
-          - VcLifecycle.ImageRemediation.Read                  # Image Remediation Privileges - Read
-          - VcLifecycle.Settings.Read                          # Settings Privileges - Read
-          - VcLifecycle.ScanForApplicablePatches              # Manage Patches - Scan for Applicable Patches
-          - VcLifecycle.ViewComplianceStatus                   # Manage Patches - View Compliance Status
+          - "VcLifecycle.Read"                                    # Lifecycle Manager: General Privileges - Read
+          - "VcLifecycle.DesiredConfigReadOnlyAccess"            # Desired Configuration Management - Read-only access
+          - "VcLifecycle.HealthPerspectives.Read"                # ESXi Health Perspectives - Read
+          - "VcLifecycle.HardwareCompatibility.Read"            # Hardware Compatibility - Access Hardware Compatibility
+          - "VcLifecycle.Image.Read"                             # Image Privileges - Read
+          - "VcLifecycle.ImageRemediation.Read"                  # Image Remediation Privileges - Read
+          - "VcLifecycle.Settings.Read"                          # Settings Privileges - Read
+          - "VcLifecycle.ScanForApplicablePatches"              # Manage Patches - Scan for Applicable Patches
+          - "VcLifecycle.ViewComplianceStatus"                   # Manage Patches - View Compliance Status
         state: present
       delegate_to: localhost
       
