@@ -51,7 +51,7 @@
           # - VcLifecycleManager.HardwareCompatibility.Read
           
           # # Lifecycle Manager: Image Privileges - Read
-          # - VcLifecycleManager.Image.Read
+          - VcLifecycleManager.Image.Read
           
           # # Lifecycle Manager: Image Remediation Privileges - Read
           # - VcLifecycleManager.ImageRemediation.Read
