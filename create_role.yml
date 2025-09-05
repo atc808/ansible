@@ -51,13 +51,15 @@
       delegate_to: localhost
       
     - name: Assign Nessus_Scanner role to service account
-      community.vmware.vmware_global_role_manager:
+      community.vmware.vmware_user_role:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: "{{ vcenter_validate_certs }}"
-        user_name: "{{ scanner_service_account }}"            # Service account from AAP (e.g., ENT_vSphere_ReadOnly)
+        principal_name: "{{ scanner_service_account }}"        # Service account from AAP (e.g., ENT_vSphere_ReadOnly)
         role_name: "Nessus_Scanner"
+        object_name: "{{ vcenter_hostname }}"
+        object_type: "Folder"
         state: present
       delegate_to: localhost
       
