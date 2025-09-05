@@ -1,59 +1,111 @@
 ---
-- name: Create Nessus_Scanner Role in vCenter
+- name: Create Nessus_Scanner role in vCenter
   hosts: localhost
   gather_facts: false
   vars:
-    # Required parameters - provided by Ansible Automation Platform
-    vcenter_hostname: "{{ vcenter_host }}"          # vCenter FQDN/IP
-    vcenter_username: "{{ vcenter_user }}"          # Admin username
-    vcenter_password: "{{ vcenter_pass }}"          # Admin password
-    validate_certs: false                           # SSL validation
+    # Required parameters from Ansible Automation Platform environment variables
+    vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"         # vCenter FQDN from VMWARE_HOST env var
+    vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"         # Admin user from VMWARE_USER env var  
+    vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"     # Admin password from VMWARE_PASSWORD env var
+    vcenter_validate_certs: false                                 # Set to true in production
     
   tasks:
-    - name: Create Nessus_Scanner role with required privileges
+    - name: Get existing roles for reference
+      community.vmware.vmware_local_role_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+      register: existing_roles
+      delegate_to: localhost
+      tags: debug
+      
+    - name: Display existing roles
+      debug:
+        var: existing_roles
+      when: existing_roles is defined
+      tags: debug
+    
+    - name: Create Nessus_Scanner custom role with basic privileges
       community.vmware.vmware_local_role_manager:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-        validate_certs: "{{ validate_certs }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
         local_role_name: "Nessus_Scanner"
-        action: create
-        # Privileges mapped from document requirements
         local_privilege_ids:
-          # Global.Settings
-          - "Global.Settings"
-          # vSphere Lifecycle Manager privileges
-          - "lifecycleSettings.Read"
-          - "lifecycleHealth.Read" 
-          - "lifecycle.Read"
-          - "lifecycleHCL.Read"
-          - "lifecycleImage.Read"
-          - "lifecycleRemediation.Read"
-          - "lifecycleSoftwareRemediation.Read"
-          - "lifecycleStagingArea.Read"
-          # Manage Patches and Upgrades
-          - "EsxUpdate.View"
-          - "EsxUpdate.Update"
-      register: role_result
-
+          # Global Settings permissions (as specified in document)
+          - Global.Settings
+          
+          # VMware vSphere Lifecycle Manager permissions (as detailed in document)
+          # Lifecycle Manager: General Privileges - Read
+          - VcLifecycleManager.Read
+          
+          # Desired Configuration Management Privileges - Read-only access
+          - VcLifecycleManager.DesiredConfiguration.Read
+          
+          # ESXi Health Perspectives - Read  
+          - VcLifecycleManager.HealthPerspectives.Read
+          
+          # Lifecycle Manager: Hardware Compatibility Privileges - Access Hardware Compatibility
+          - VcLifecycleManager.HardwareCompatibility.Read
+          
+          # Lifecycle Manager: Image Privileges - Read
+          - VcLifecycleManager.Image.Read
+          
+          # Lifecycle Manager: Image Remediation Privileges - Read
+          - VcLifecycleManager.ImageRemediation.Read
+          
+          # Lifecycle Manager: Settings Privileges - Read
+          - VcLifecycleManager.Settings.Read
+          
+          # Manage Patches and Upgrades - Scan for Applicable Patches, Extensions, and Upgrades
+          - VcLifecycleManager.Patch.Scan
+          
+          # Manage Patches and Upgrades - View Compliance Status
+          - VcLifecycleManager.Compliance.View
+          
+        state: present
+      delegate_to: localhost
+      register: role_creation
+      
     - name: Display role creation result
-      ansible.builtin.debug:
-        msg: "Role creation status: {{ role_result }}"
-
-    - name: Assign Nessus_Scanner role to service account globally
-      community.vmware.vmware_local_user_manager:
+      debug:
+        var: role_creation
+      when: role_creation is defined
+      
+    - name: Assign Nessus_Scanner role to service account at root level
+      community.vmware.vmware_object_role_permission:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
-        validate_certs: "{{ validate_certs }}"
-        local_user_name: "{{ scanning_account }}"    # Provided by AAP: ENT_vSphere_ReadOnly
-        local_user_password: "{{ scanning_password }}" # Service account password
-        roles:
-          - "Nessus_Scanner"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        role: "Nessus_Scanner"
+        principal: "{{ scanner_service_account }}"                 # Service account from AAP (e.g., ENT_vSphere_ReadOnly)
+        object_type: "Folder"
+        object_name: "rootFolder"                                  # Assigns at global level
         state: present
-      when: role_result is succeeded
-      register: assignment_result
-
-    - name: Display assignment result
-      ansible.builtin.debug:
-        msg: "Role assignment status: {{ assignment_result }}"
+      delegate_to: localhost
+      register: permission_assignment
+      
+    - name: Display permission assignment result
+      debug:
+        var: permission_assignment
+      when: permission_assignment is defined
+      
+    - name: Verify role creation and assignment
+      community.vmware.vmware_object_role_permission_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        principal: "{{ scanner_service_account }}"
+        object_type: "Folder"
+        object_name: "rootFolder"
+      register: verification
+      delegate_to: localhost
+      
+    - name: Display verification results
+      debug:
+        msg: "Role assignment verified: {{ verification.object_role_permission_info }}"
+      when: verification is defined
