@@ -56,7 +56,7 @@
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: "{{ vcenter_validate_certs }}"
-        user_name: "{{ scanner_service_account }}"            # Service account fro AAP (e.g., ENT_vSphere_ReadOnly)
+        user_name: "{{ scanner_service_account }}"            # Service account from AAP (e.g., ENT_vSphere_ReadOnly)
         role_name: "Nessus_Scanner"
         state: present
       delegate_to: localhost
