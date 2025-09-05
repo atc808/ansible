@@ -39,7 +39,7 @@
         state: present
       delegate_to: localhost
       
-GGH
+
       
     - name: Verify role creation
       community.vmware.vmware_local_role_info:
