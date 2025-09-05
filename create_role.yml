@@ -23,7 +23,7 @@
     - name: Display existing roles
       debug:
         var: existing_roles
-      when: existing_roles is defined
+     # when: existing_roles is defined
       tags: debug
     
     - name: Create Nessus_Scanner custom role with basic privileges
