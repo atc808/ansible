@@ -46,18 +46,10 @@
         validate_certs: "{{ vcenter_validate_certs }}"
         local_role_name: "Nessus_Scanner"
         local_privilege_ids:
-          # Core privilege required for Nessus vulnerability scanning (minimum requirement)
-          - LifecycleManager.Image.Read
-          
+
           # Optional privilege for compliance scanning (recommended)
           - Global.Settings
-          
-          # Additional view privileges that may be helpful for comprehensive scanning
-          - LifecycleManager.View
-          - System.Anonymous
-          - System.Read
-        
-        state: present
+
       delegate_to: localhost
       register: role_creation
       tags:
