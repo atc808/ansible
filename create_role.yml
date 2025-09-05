@@ -4,9 +4,14 @@
   gather_facts: false
   vars:
     # Required parameters from Ansible Automation Platform
-    vcenter_hostname: "{{ vcenter_fqdn }}"           # vCenter FQDN
-    vcenter_username: "{{ vcenter_admin_user }}"     # Admin user with role creation permissions
-    vcenter_password: "{{ vcenter_admin_password }}" # Admin password
+    # vcenter_hostname: "{{ vcenter_fqdn }}"           # vCenter FQDN
+    # vcenter_username: "{{ vcenter_admin_user }}"     # Admin user with role creation permissions
+    # vcenter_password: "{{ vcenter_admin_password }}" # Admin password
+    vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"
+    vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+
+
     vcenter_validate_certs: false                    # Set to true in production
     
   tasks:
