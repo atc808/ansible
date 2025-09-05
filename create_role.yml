@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    # Required parameters from Ansible Automation Platform environment variables
+    # Required parameters from Ansible Automation Platform environment variable
     vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"         # vCenter FQDN from VMWARE_HOST env var
     vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"         # Admin user from VMWARE_USER env var  
     vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"     # Admin password from VMWARE_PASSWORD env var
