@@ -49,6 +49,7 @@
 
           # Optional privilege for compliance scanning (recommended
           - Global.Settings
+          - LifecycleManager.Image.Read
 
       delegate_to: localhost
       register: role_creation
