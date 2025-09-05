@@ -3,18 +3,29 @@
   hosts: localhost
   gather_facts: false
   vars:
-    # Required parameters from Ansible Automation Platform
-    # vcenter_hostname: "{{ vcenter_fqdn }}"           # vCenter FQDN
-    # vcenter_username: "{{ vcenter_admin_user }}"     # Admin user with role creation permissions
-    # vcenter_password: "{{ vcenter_admin_password }}" # Admin password
-    vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
-    vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"
-    vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
-
-
+    # Required parameters from Ansible Automation Platform environment variables
+    vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"         # vCenter FQDN from VMWARE_HOST env var
+    vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"         # Admin user from VMWARE_USER env var
+    vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"     # Admin password from VMWARE_PASSWORD env var
     vcenter_validate_certs: false                    # Set to true in production
     
   tasks:
+    - name: Get available privileges for reference
+      community.vmware.vmware_privilege_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+      register: privilege_info
+      delegate_to: localhost
+      tags: debug
+      
+    - name: Display Lifecycle Manager privileges
+      debug:
+        msg: "{{ privilege_info.privilege_info | selectattr('priv_id', 'search', 'VcLifecycle|Lifecycle') | list }}"
+      when: privilege_info is defined
+      tags: debug
+    
     - name: Create Nessus_Scanner custom role
       community.vmware.vmware_local_role_manager:
         hostname: "{{ vcenter_hostname }}"
@@ -24,30 +35,29 @@
         local_role_name: "Nessus_Scanner"
         local_privilege_ids:
           # Global Settings permissions
-          - "Global.Settings"
+          - Global.Settings
           
           # VMware vSphere Lifecycle Manager permissions
-          - "VcLifecycle.Read"                                    # Lifecycle Manager: General Privileges - Read
-          - "VcLifecycle.DesiredConfigReadOnlyAccess"            # Desired Configuration Management - Read-only access
-          - "VcLifecycle.HealthPerspectives.Read"                # ESXi Health Perspectives - Read
-          - "VcLifecycle.HardwareCompatibility.Read"            # Hardware Compatibility - Access Hardware Compatibility
-          - "VcLifecycle.Image.Read"                             # Image Privileges - Read
-          - "VcLifecycle.ImageRemediation.Read"                  # Image Remediation Privileges - Read
-          - "VcLifecycle.Settings.Read"                          # Settings Privileges - Read
-          - "VcLifecycle.ScanForApplicablePatches"              # Manage Patches - Scan for Applicable Patches
-          - "VcLifecycle.ViewComplianceStatus"                   # Manage Patches - View Compliance Status
+          - VcLifecycle.Read                                    # Lifecycle Manager: General Privileges - Read
+          - VcLifecycle.DesiredConfigReadOnlyAccess            # Desired Configuration Management - Read-only access
+          - VcLifecycle.HealthPerspectives.Read                # ESXi Health Perspectives - Read
+          - VcLifecycle.HardwareCompatibility.Read            # Hardware Compatibility - Access Hardware Compatibility
+          - VcLifecycle.Image.Read                             # Image Privileges - Read
+          - VcLifecycle.ImageRemediation.Read                  # Image Remediation Privileges - Read
+          - VcLifecycle.Settings.Read                          # Settings Privileges - Read
+          - VcLifecycle.ScanForApplicablePatches              # Manage Patches - Scan for Applicable Patches
+          - VcLifecycle.ViewComplianceStatus                   # Manage Patches - View Compliance Status
         state: present
       delegate_to: localhost
       
     - name: Assign Nessus_Scanner role to service account
-      community.vmware.vmware_local_role_manager:
+      community.vmware.vmware_global_role_manager:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: "{{ vcenter_validate_certs }}"
-        user_name: "acasscan" #{{ scanner_service_account }}"            # Service account from AAP (e.g., ENT_vSphere_ReadOnly)
+        user_name: "{{ scanner_service_account }}"            # Service account from AAP (e.g., ENT_vSphere_ReadOnly)
         role_name: "Nessus_Scanner"
-        
         state: present
       delegate_to: localhost
       
