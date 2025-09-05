@@ -35,7 +35,7 @@
       delegate_to: localhost
       
     - name: Assign Nessus_Scanner role to service account
-      community.vmware.vmware_global_role_manager:
+      community.vmware.vmware_local_role_manager:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
