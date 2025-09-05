@@ -47,7 +47,7 @@
         local_role_name: "Nessus_Scanner"
         local_privilege_ids:
 
-          # Optional privilege for compliance scanning (recommended)
+          # Optional privilege for compliance scanning (recommended
           - Global.Settings
 
       delegate_to: localhost
