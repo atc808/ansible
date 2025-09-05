@@ -22,7 +22,7 @@
       
     - name: Display existing roles
       debug:
-        msg: "Existing roles: {{ existing_roles.local_role_manager_info | map(attribute='role_name') | list }}"
+        var: existing_roles
       when: existing_roles is defined
       tags: debug
     
