@@ -35,11 +35,11 @@
         local_role_name: "Nessus_Scanner"
         local_privilege_ids:
           # Global Settings permissions (as specified in document)
-          - Global.Settings
+          #- Global.Settings
           
           # # VMware vSphere Lifecycle Manager permissions (as detailed in document)
           # # Lifecycle Manager: General Privileges - Read
-          # - VcLifecycleManager.Read
+          - VcLifecycleManager.Image.Read
           
           # # Desired Configuration Management Privileges - Read-only access
           # - VcLifecycleManager.DesiredConfiguration.Read
